@@ -16,6 +16,12 @@ export const config = {
   logLevel: process.env.LOG_LEVEL || "info",
   tz: process.env.TZ || "Europe/Paris",
 
+  moderation: {
+    blockMedia: (process.env.BLOCK_MEDIA ?? "true").toLowerCase() !== "false",
+    deleteBlocked: (process.env.DELETE_BLOCKED ?? "true").toLowerCase() !== "false",
+  },
+
+
   // Limites MVP (faciles à ajuster)
   flood: { windowMs: 7000, maxMessages: 5 }, // 5 msg / 7s = flood
   warnings: { maxBeforeNotice: 3 }, // au-delà : message d'alerte (pas de kick auto)
