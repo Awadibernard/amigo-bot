@@ -91,6 +91,7 @@ function buildContext(sock, msg) {
   const ctxInfo = m.extendedTextMessage?.contextInfo;
   const mentioned = ctxInfo?.mentionedJid || [];
   const quotedJid = ctxInfo?.participant || null;
+  const quotedStanzaId = ctxInfo?.stanzaId || null;
 
   return {
     sock,
@@ -103,5 +104,6 @@ function buildContext(sock, msg) {
     botJid,
     mentioned,
     quotedJid,
+    quotedStanzaId,
   };
 }
