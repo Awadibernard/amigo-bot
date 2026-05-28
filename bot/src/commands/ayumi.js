@@ -12,6 +12,5 @@ export async function ayumi({ args, userJid, groupJid }) {
     content: m.content,
   }));
 
-  const reply = await askAyumi({ userJid, history: recent, userMessage });
-  return reply || "Mon cerveau bug, réessaie plus tard 😴";
+  return await askAyumi({ userJid, history: recent, userMessage });
 }
