@@ -60,11 +60,13 @@ export async function handleMessage(ctx) {
   const bad = containsBlacklisted(text);
   if (bad) {
     const { total } = warnUser(userJid, `mot interdit: ${bad}`);
+    await tryDelete(sock, groupJid, msg);
     await sock.sendMessage(groupJid, {
-      text: `🤐 Langage. Warn ${total}.`,
+      text: `🤐 Langage interdit. Warn ${total}.`,
     });
     return;
   }
+
 
   if (isFlood(userJid)) {
     await sock.sendMessage(groupJid, {
