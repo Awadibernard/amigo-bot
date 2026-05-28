@@ -4,28 +4,48 @@ import { trackUser, saveMessage } from "../db/repo.js";
 import { detectLink } from "../moderation/antilink.js";
 import { isFlood } from "../moderation/antiflood.js";
 import { containsBlacklisted } from "../moderation/blacklist.js";
+import { detectMediaType, MEDIA_LABEL } from "../moderation/media.js";
 import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/openrouter.js";
 import { recentMessages } from "../db/repo.js";
-import { jidToNumber } from "../utils/text.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
 
+async function tryDelete(sock, groupJid, msg) {
+  if (!config.moderation.deleteBlocked) return;
+  try {
+    await sock.sendMessage(groupJid, { delete: msg.key });
+  } catch (err) {
+    logger.warn({ err: err?.message }, "delete failed (bot pas admin ?)");
+  }
+}
+
 /**
- * Routeur principal. `ctx` = { sock, msg, text, userJid, groupJid, pushName, isFromBot, mentioned, quotedJid, botJid }
+ * Routeur principal.
  */
 export async function handleMessage(ctx) {
   const { sock, text, userJid, groupJid, pushName, isFromBot, botJid, msg } = ctx;
   if (isFromBot) return;
-  if (!groupJid) return; // MVP : groupes uniquement
-  if (config.groupJid && groupJid !== config.groupJid) return; // restreint au groupe configuré
+  if (!groupJid) return;
+  if (config.groupJid && groupJid !== config.groupJid) return;
 
-  // Persistence
   trackUser(userJid, pushName);
   saveMessage(userJid, groupJid, text || "");
 
+  // --- Modération média (avant tout, même sans texte) ---
+  const media = detectMediaType(msg);
+  if (media && config.moderation.blockMedia) {
+    const { total } = warnUser(userJid, `média: ${media}`);
+    await tryDelete(sock, groupJid, msg);
+    await sock.sendMessage(groupJid, {
+      text: `🚫 Pas de ${MEDIA_LABEL[media] || media} ici, ${pushName || "toi"}. Warn ${total}.`,
+    });
+    return;
+  }
+
   if (!text) return;
+
 
   // --- Modération ---
   const link = detectLink(text);
