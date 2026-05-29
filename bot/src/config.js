@@ -10,10 +10,12 @@ export const config = {
   groupJid: process.env.GROUP_JID || "",
   adminNumbers: parseList(process.env.ADMIN_NUMBERS),
   openrouter: {
-    apiKey: process.env.OPENROUTER_API_KEY || "",
-    model: process.env.OPENROUTER_MODEL || "meta-llama/llama-3.1-8b-instruct:free",
+    apiKey: (process.env.OPENROUTER_API_KEY || "").trim(),
+    model: (process.env.OPENROUTER_MODEL || "mistralai/mistral-7b-instruct:free").trim(),
+    fallbackModel: "meta-llama/llama-3.1-8b-instruct:free",
   },
   logLevel: process.env.LOG_LEVEL || "info",
+  debugAi: (process.env.DEBUG_AI || "false").toLowerCase() === "true",
   tz: process.env.TZ || "Europe/Paris",
 
   moderation: {

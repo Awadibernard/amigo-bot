@@ -3,7 +3,7 @@ import { logger } from "../logger.js";
 import { SYSTEM_PROMPT, FEW_SHOTS } from "../persona/prompt.js";
 
 // Rate-limit en mémoire (suffit pour un petit groupe).
-const userHits = new Map(); // jid -> [timestamps]
+const userHits = new Map();
 let dayHits = { day: dayKey(), count: 0 };
 
 function dayKey() {
@@ -14,7 +14,6 @@ function allowed(userJid) {
   const today = dayKey();
   if (dayHits.day !== today) dayHits = { day: today, count: 0 };
   if (dayHits.count >= config.ai.maxPerDay) return false;
-
   const now = Date.now();
   const hourAgo = now - 3600 * 1000;
   const arr = (userHits.get(userJid) || []).filter((t) => t > hourAgo);
@@ -28,34 +27,63 @@ function allowed(userJid) {
   return true;
 }
 
-// Sanity check au boot : la clé est-elle bien chargée ?
-const rawKey = (config.openrouter.apiKey || "").trim();
+// ============ Sanity check au boot ============
+const rawKey = config.openrouter.apiKey;
 if (!rawKey) {
   logger.error(
-    "❌ OPENROUTER_API_KEY manquant. Vérifie ton .env (à la racine du dossier bot/) et redémarre.",
+    "❌ OPENROUTER_API_KEY est undefined/vide. Vérifie bot/.env (même dossier que package.json) puis redémarre.",
   );
 } else {
   logger.info(
     {
       length: rawKey.length,
-      prefix: rawKey.slice(0, 7),
+      prefix: rawKey.slice(0, 10),
       suffix: rawKey.slice(-4),
-      startsWithSk: rawKey.startsWith("sk-or-"),
+      startsWithSkOr: rawKey.startsWith("sk-or-"),
       model: config.openrouter.model,
+      debugAi: config.debugAi,
     },
     "✅ OPENROUTER_API_KEY chargée",
   );
 }
 
+async function callOpenRouter({ apiKey, model, messages }) {
+  const body = {
+    model,
+    messages,
+    max_tokens: config.ai.maxTokens,
+    temperature: 0.85,
+  };
+
+  if (config.debugAi) {
+    logger.info({ model, msgCount: messages.length }, "→ OpenRouter request");
+  }
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://ayumi.local",
+      "X-Title": "Ayumi WhatsApp Bot",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (config.debugAi) {
+    logger.info({ status: res.status, model }, "← OpenRouter response");
+  }
+  return res;
+}
+
 /**
- * @param {{userJid:string, history:{role:'user'|'assistant', content:string}[], userMessage:string}} args
  * @returns {Promise<string|null>}
  */
 export async function askAyumi({ userJid, history, userMessage }) {
-  const apiKey = (config.openrouter.apiKey || "").trim();
+  const apiKey = config.openrouter.apiKey;
   if (!apiKey) {
-    logger.warn("OPENROUTER_API_KEY manquant — IA désactivée");
-    return "Mon cerveau bug : je n'ai pas ma clé API OpenRouter 🔑";
+    logger.error("OPENROUTER_API_KEY manquant au runtime — IA désactivée");
+    return "Mon cerveau bug : clé API OpenRouter manquante 🔑 (vérifie bot/.env)";
   }
   if (!allowed(userJid)) {
     return "J'ai déjà trop parlé aujourd'hui, repose-moi plus tard 😮‍💨";
@@ -68,53 +96,44 @@ export async function askAyumi({ userJid, history, userMessage }) {
     { role: "user", content: userMessage },
   ];
 
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://ayumi.local",
-        "X-Title": "Ayumi WhatsApp Bot",
-      },
-      body: JSON.stringify({
-        model: config.openrouter.model,
-        messages,
-        max_tokens: config.ai.maxTokens,
-        temperature: 0.85,
-      }),
-    });
+  const models = [config.openrouter.model];
+  if (config.openrouter.fallbackModel && config.openrouter.fallbackModel !== config.openrouter.model) {
+    models.push(config.openrouter.fallbackModel);
+  }
 
-    if (!res.ok) {
+  let lastErrText = "";
+  for (const model of models) {
+    try {
+      const res = await callOpenRouter({ apiKey, model, messages });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (text) return text;
+        logger.warn({ data }, "Réponse OpenRouter vide");
+        return "Mon cerveau bug : réponse vide 🤔";
+      }
+
       const txt = await res.text();
+      lastErrText = txt.slice(0, 500);
       logger.error(
-        { status: res.status, body: txt.slice(0, 500), model: config.openrouter.model },
-        "OpenRouter API error",
+        { status: res.status, body: lastErrText, model },
+        "❌ OpenRouter API error",
       );
+
       if (res.status === 401) {
         return "Mon cerveau bug : clé API OpenRouter invalide ou mal envoyée 🔑";
       }
-      if (res.status === 402) {
-        return "Mon cerveau bug : plus de crédits OpenRouter 💸";
-      }
-      if (res.status === 429) {
-        return "Trop de questions d'un coup, laisse-moi respirer 😮‍💨";
-      }
+      if (res.status === 402) return "Mon cerveau bug : plus de crédits OpenRouter 💸";
+      if (res.status === 429) return "Trop de questions d'un coup, laisse-moi respirer 😮‍💨";
       if (res.status === 404) {
-        return `Mon cerveau bug : modèle introuvable (${config.openrouter.model}) 🤖`;
+        logger.warn({ model }, "Modèle introuvable, tentative fallback...");
+        continue; // essaie le modèle suivant
       }
       return "Mon cerveau bug, réessaie plus tard 😴";
+    } catch (err) {
+      logger.error({ err: err?.message || String(err), model }, "OpenRouter call failed");
+      lastErrText = err?.message || String(err);
     }
-
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
-    if (!text) {
-      logger.warn({ data }, "Réponse OpenRouter vide");
-      return "Mon cerveau bug : réponse vide 🤔";
-    }
-    return text;
-  } catch (err) {
-    logger.error({ err: err?.message || err }, "OpenRouter call failed");
-    return "Mon cerveau bug : erreur réseau avec OpenRouter 🌐";
   }
+  return `Mon cerveau bug : aucun modèle dispo (${lastErrText.slice(0, 80)}) 🌐`;
 }
