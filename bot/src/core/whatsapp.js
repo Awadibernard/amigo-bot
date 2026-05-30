@@ -8,6 +8,7 @@ import qrcode from "qrcode-terminal";
 import pino from "pino";
 import { logger } from "../logger.js";
 import { handleMessage } from "../handlers/message.js";
+import { stats } from "../dashboard/state.js";
 
 const AUTH_DIR = "auth_session";
 
@@ -37,10 +38,13 @@ export async function startWhatsApp(onReady) {
       qrcode.generate(qr, { small: true });
     }
     if (connection === "open") {
+      stats.whatsappConnected = true;
+      stats.botJid = sock.user?.id || "";
       logger.info({ user: sock.user?.id }, "WhatsApp connecté");
       onReady?.(sock);
     }
     if (connection === "close") {
+      stats.whatsappConnected = false;
       const code =
         lastDisconnect?.error?.output?.statusCode ||
         lastDisconnect?.error?.output?.payload?.statusCode;

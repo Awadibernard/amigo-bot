@@ -4,6 +4,10 @@ import { config } from "./config.js";
 import { startWhatsApp } from "./core/whatsapp.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { kvGet, kvSet } from "./db/repo.js";
+import { startDashboard } from "./dashboard/server.js";
+
+
+startDashboard();
 
 let activeGroupJid = config.groupJid || kvGet("active_group_jid") || "";
 
