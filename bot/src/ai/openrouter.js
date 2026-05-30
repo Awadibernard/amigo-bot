@@ -1,8 +1,8 @@
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { SYSTEM_PROMPT, FEW_SHOTS } from "../persona/prompt.js";
+import { stats } from "../dashboard/state.js";
 
-// Rate-limit en mémoire (suffit pour un petit groupe).
 const userHits = new Map();
 let dayHits = { day: dayKey(), count: 0 };
 
@@ -30,22 +30,27 @@ function allowed(userJid) {
 // ============ Sanity check au boot ============
 const rawKey = config.openrouter.apiKey;
 if (!rawKey) {
-  logger.error(
-    "❌ OPENROUTER_API_KEY est undefined/vide. Vérifie bot/.env (même dossier que package.json) puis redémarre.",
-  );
+  logger.error("❌ OPENROUTER_API_KEY manquante dans bot/.env");
 } else {
   logger.info(
     {
       length: rawKey.length,
-      prefix: rawKey.slice(0, 10),
-      suffix: rawKey.slice(-4),
-      startsWithSkOr: rawKey.startsWith("sk-or-"),
-      model: config.openrouter.model,
-      debugAi: config.debugAi,
+      prefix: rawKey.slice(0, 10) + "…",
+      suffix: "…" + rawKey.slice(-4),
+      models: config.openrouter.models,
     },
-    "✅ OPENROUTER_API_KEY chargée",
+    "✅ OpenRouter prêt",
   );
 }
+logger.info({ admins: config.adminNumbers }, "👮 Admins détectés");
+logger.info(
+  {
+    blockMedia: config.moderation.blockMedia,
+    deleteBlocked: config.moderation.deleteBlocked,
+    debug: config.debug,
+  },
+  "⚙️  Modération",
+);
 
 async function callOpenRouter({ apiKey, model, messages }) {
   const body = {
@@ -55,35 +60,33 @@ async function callOpenRouter({ apiKey, model, messages }) {
     temperature: 0.85,
   };
 
-  if (config.debugAi) {
-    logger.info({ model, msgCount: messages.length }, "→ OpenRouter request");
-  }
+  if (config.debugAi) logger.info({ model, msgs: messages.length }, "→ OpenRouter");
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://ayumi.local",
-      "X-Title": "Ayumi WhatsApp Bot",
-    },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 25000);
 
-  if (config.debugAi) {
-    logger.info({ status: res.status, model }, "← OpenRouter response");
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://ayumi.local",
+        "X-Title": "Ayumi WhatsApp Bot",
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(timer);
   }
-  return res;
 }
 
-/**
- * @returns {Promise<string|null>}
- */
 export async function askAyumi({ userJid, history, userMessage }) {
   const apiKey = config.openrouter.apiKey;
   if (!apiKey) {
-    logger.error("OPENROUTER_API_KEY manquant au runtime — IA désactivée");
-    return "Mon cerveau bug : clé API OpenRouter manquante 🔑 (vérifie bot/.env)";
+    return "⚠️ IA indisponible : clé API OpenRouter manquante 🔑";
   }
   if (!allowed(userJid)) {
     return "J'ai déjà trop parlé aujourd'hui, repose-moi plus tard 😮‍💨";
@@ -96,44 +99,50 @@ export async function askAyumi({ userJid, history, userMessage }) {
     { role: "user", content: userMessage },
   ];
 
-  const models = [config.openrouter.model];
-  if (config.openrouter.fallbackModel && config.openrouter.fallbackModel !== config.openrouter.model) {
-    models.push(config.openrouter.fallbackModel);
-  }
-
-  let lastErrText = "";
-  for (const model of models) {
+  const errors = [];
+  for (const model of config.openrouter.models) {
+    stats.aiRequests += 1;
     try {
       const res = await callOpenRouter({ apiKey, model, messages });
+
       if (res.ok) {
         const data = await res.json();
         const text = data?.choices?.[0]?.message?.content?.trim();
-        if (text) return text;
-        logger.warn({ data }, "Réponse OpenRouter vide");
-        return "Mon cerveau bug : réponse vide 🤔";
+        if (text) {
+          stats.lastModel = model;
+          stats.aiSuccess += 1;
+          if (config.debugAi) logger.info({ model, status: 200 }, "← OK");
+          return text;
+        }
+        const errMsg = data?.error?.message || "réponse vide";
+        logger.warn({ model, errMsg }, "Réponse vide / erreur soft");
+        errors.push(`${model}: ${errMsg.slice(0, 100)}`);
+        continue;
       }
 
-      const txt = await res.text();
-      lastErrText = txt.slice(0, 500);
-      logger.error(
-        { status: res.status, body: lastErrText, model },
-        "❌ OpenRouter API error",
-      );
+      const bodyTxt = await res.text();
+      const short = bodyTxt.slice(0, 300);
+      logger.error({ status: res.status, model, body: short }, "❌ OpenRouter");
+      errors.push(`${model}[${res.status}]: ${short.slice(0, 100)}`);
 
       if (res.status === 401) {
-        return "Mon cerveau bug : clé API OpenRouter invalide ou mal envoyée 🔑";
+        return "⚠️ Clé API OpenRouter invalide 🔑";
       }
-      if (res.status === 402) return "Mon cerveau bug : plus de crédits OpenRouter 💸";
-      if (res.status === 429) return "Trop de questions d'un coup, laisse-moi respirer 😮‍💨";
-      if (res.status === 404) {
-        logger.warn({ model }, "Modèle introuvable, tentative fallback...");
-        continue; // essaie le modèle suivant
+      if (res.status === 402) {
+        return "⚠️ Plus de crédits OpenRouter 💸";
       }
-      return "Mon cerveau bug, réessaie plus tard 😴";
+      // 404 (no endpoints), 429 (rate), 5xx → fallback modèle suivant
+      continue;
     } catch (err) {
-      logger.error({ err: err?.message || String(err), model }, "OpenRouter call failed");
-      lastErrText = err?.message || String(err);
+      const msg = err?.message || String(err);
+      logger.error({ model, err: msg }, "Call failed");
+      errors.push(`${model}: ${msg.slice(0, 100)}`);
     }
   }
-  return `Mon cerveau bug : aucun modèle dispo (${lastErrText.slice(0, 80)}) 🌐`;
+
+  stats.aiErrors += 1;
+  if (config.debug) {
+    logger.error({ errors }, "Tous les modèles ont échoué");
+  }
+  return "⚠️ IA indisponible temporairement";
 }
