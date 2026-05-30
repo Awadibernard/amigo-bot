@@ -5,7 +5,7 @@ import { startWhatsApp } from "./core/whatsapp.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { kvGet, kvSet } from "./db/repo.js";
 import { startDashboard } from "./dashboard/server.js";
-import { stats } from "./dashboard/state.js";
+
 
 startDashboard();
 
