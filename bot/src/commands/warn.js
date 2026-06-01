@@ -1,13 +1,10 @@
+import { requireAdmin } from "./_admin.js";
 import { warnUser } from "../moderation/warnings.js";
 import { jidToNumber } from "../utils/text.js";
-import { config } from "../config.js";
 
 export async function warn({ args, userJid, mentioned, quotedJid }) {
-  // Seuls les admins peuvent /warn
-  const num = jidToNumber(userJid);
-  if (!config.adminNumbers.includes(num)) {
-    return "Seuls les admins peuvent utiliser /warn.";
-  }
+  const denied = requireAdmin(userJid);
+  if (denied) return denied;
 
   const target = mentioned?.[0] || quotedJid;
   if (!target) return "Mentionne quelqu'un ou réponds à son message : /warn @x raison";
