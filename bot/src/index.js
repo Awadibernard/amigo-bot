@@ -1,25 +1,45 @@
 import "./db/index.js"; // initialise la DB au boot
 import { logger } from "./logger.js";
 import { config } from "./config.js";
+import { runtime } from "./runtime.js";
 import { startWhatsApp } from "./core/whatsapp.js";
 import { startScheduler } from "./jobs/scheduler.js";
 import { kvGet, kvSet } from "./db/repo.js";
 import { startDashboard } from "./dashboard/server.js";
 
+// Filet de sécurité GLOBAL : le bot ne doit jamais crasher
+process.on("unhandledRejection", (err) =>
+  logger.error({ err: err?.message, stack: err?.stack }, "unhandledRejection"),
+);
+process.on("uncaughtException", (err) =>
+  logger.error({ err: err?.message, stack: err?.stack }, "uncaughtException"),
+);
 
 startDashboard();
 
 let activeGroupJid = config.groupJid || kvGet("active_group_jid") || "";
-
 function getGroupJid() {
   return config.groupJid || activeGroupJid;
 }
 
 async function main() {
-  logger.info("Démarrage Ayumi...");
+  logger.info("🚀 Démarrage Ayumi…");
+  logger.info(
+    {
+      testMode: config.testMode,
+      adminEnforce: runtime.adminEnforce,
+      admins: config.adminNumbers.length
+        ? config.adminNumbers
+        : "(aucun — ADMIN_NUMBERS vide)",
+      model: config.gemini.model,
+      blockLinks: config.moderation.blockLinks,
+      blockMedia: config.moderation.blockMedia,
+      deleteBlocked: config.moderation.deleteBlocked,
+    },
+    "⚙️  Configuration",
+  );
 
   await startWhatsApp((sock) => {
-    // Première connexion réussie : on capture le groupe si non configuré.
     sock.ev.on("messages.upsert", ({ messages }) => {
       if (config.groupJid) return;
       for (const m of messages) {
@@ -31,15 +51,10 @@ async function main() {
         }
       }
     });
-
     startScheduler(sock, getGroupJid);
   });
 }
 
-process.on("unhandledRejection", (err) => logger.error({ err }, "unhandledRejection"));
-process.on("uncaughtException", (err) => logger.error({ err }, "uncaughtException"));
-
-main().catch((err) => {
-  logger.error({ err }, "Fatal");
-  process.exit(1);
-});
+main().catch((err) =>
+  logger.error({ err: err?.message, stack: err?.stack }, "Fatal au démarrage"),
+);

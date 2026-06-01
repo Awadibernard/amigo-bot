@@ -7,7 +7,7 @@ import { containsBlacklisted } from "../moderation/blacklist.js";
 import { detectMediaType, MEDIA_LABEL } from "../moderation/media.js";
 import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
-import { askAyumi } from "../ai/openrouter.js";
+import { askAyumi } from "../ai/gemini.js";
 import { recentMessages } from "../db/repo.js";
 import { stats } from "../dashboard/state.js";
 
@@ -28,14 +28,14 @@ async function tryDelete(sock, groupJid, msg, reason = "") {
     logger.info({ reason, id: msg.key.id }, "🗑️  message supprimé");
     return true;
   } catch (err) {
-    logger.warn({ err: err?.message, reason }, "❌ delete failed (bot pas admin du groupe ?)");
+    logger.warn(
+      { err: err?.message, reason },
+      "❌ delete failed (bot pas admin du groupe ?)",
+    );
     return false;
   }
 }
 
-/**
- * Routeur principal.
- */
 export async function handleMessage(ctx) {
   const { sock, text, userJid, groupJid, pushName, isFromBot, botJid, msg } = ctx;
   if (isFromBot) return;
@@ -46,8 +46,7 @@ export async function handleMessage(ctx) {
   saveMessage(userJid, groupJid, text || "");
   stats.messagesSeen += 1;
 
-  // --- Modération média ---
-  // Stickers TOUJOURS autorisés. Le reste dépend de BLOCK_MEDIA.
+  // --- Médias (stickers TOUJOURS autorisés) ---
   const media = detectMediaType(msg);
   if (media && media !== "sticker" && config.moderation.blockMedia) {
     const { total } = warnUser(userJid, `média: ${media}`);
@@ -61,19 +60,21 @@ export async function handleMessage(ctx) {
 
   if (!text) return;
 
-  // --- Liens : suppression + warn ---
-  const link = detectLink(text);
-  if (link) {
-    const { total } = warnUser(userJid, `lien: ${link}`);
-    stats.warnsIssued += 1;
-    await tryDelete(sock, groupJid, msg, `link:${link}`);
-    await sock.sendMessage(groupJid, {
-      text: `🚫 Pas de liens ici (${link}). Warn ${total}.`,
-    });
-    return;
+  // --- Liens ---
+  if (config.moderation.blockLinks) {
+    const link = detectLink(text);
+    if (link) {
+      const { total } = warnUser(userJid, `lien: ${link}`);
+      stats.warnsIssued += 1;
+      await tryDelete(sock, groupJid, msg, `link:${link}`);
+      await sock.sendMessage(groupJid, {
+        text: `🚫 Pas de liens ici (${link}). Warn ${total}.`,
+      });
+      return;
+    }
   }
 
-  // --- Blacklist : suppression + warn ---
+  // --- Blacklist (insultes + sexuel explicite) ---
   const bad = containsBlacklisted(text);
   if (bad) {
     const { total } = warnUser(userJid, `mot interdit: ${bad}`);
@@ -107,7 +108,10 @@ export async function handleMessage(ctx) {
         }
       }
     } catch (err) {
-      logger.error({ err: err?.message, cmd: cmd.name }, "Command failed");
+      logger.error(
+        { err: err?.message, stack: err?.stack, cmd: cmd.name },
+        "Command failed",
+      );
       await sock.sendMessage(groupJid, { text: "Erreur sur cette commande." });
     }
     return;
