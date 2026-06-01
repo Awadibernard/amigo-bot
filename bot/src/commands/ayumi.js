@@ -1,4 +1,4 @@
-import { askAyumi } from "../ai/openrouter.js";
+import { askAyumi } from "../ai/gemini.js";
 import { recentMessages } from "../db/repo.js";
 import { pickRandom } from "../utils/text.js";
 import { GREETINGS } from "../persona/canned.js";
