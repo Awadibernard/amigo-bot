@@ -70,6 +70,24 @@ export async function startWhatsApp(onReady) {
     }
   });
 
+  // Bienvenue automatique pour les nouveaux membres
+  sock.ev.on("group-participants.update", async (ev) => {
+    try {
+      const { config: cfg } = await import("../config.js");
+      if (!cfg.proactive.welcomeNewMembers) return;
+      if (ev.action !== "add") return;
+      const names = ev.participants
+        .map((p) => "@" + p.split("@")[0])
+        .join(" ");
+      await sock.sendMessage(ev.id, {
+        text: `👋 Bienvenue ${names} dans le groupe ! Je suis Ayumi, tape /help pour me découvrir.`,
+        mentions: ev.participants,
+      });
+    } catch (err) {
+      logger.warn({ err: err?.message }, "welcome failed");
+    }
+  });
+
   return sock;
 }
 
