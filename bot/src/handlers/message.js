@@ -143,6 +143,7 @@ export async function handleMessage(ctx) {
 
     const reply = await askAyumi({
       userJid,
+      userName: pushName,
       history: recent.slice(0, -1),
       userMessage: text,
     });
