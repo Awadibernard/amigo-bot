@@ -10,6 +10,7 @@ import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
 import { recentMessages } from "../db/repo.js";
 import { stats } from "../dashboard/state.js";
+import { tryAnswer, hasActiveGame } from "../games/index.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
 
