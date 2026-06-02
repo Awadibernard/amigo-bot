@@ -10,6 +10,16 @@ import { poll } from "./poll.js";
 import { kick } from "./kick.js";
 import { promote, demote } from "./promote.js";
 import { tagall } from "./tagall.js";
+import {
+  jeu,
+  quiz,
+  devinette,
+  vraifaux,
+  motmystere,
+  stop,
+} from "./jeu.js";
+import { classement } from "./classement.js";
+import { remember, memories, forget } from "./remember.js";
 
 export const commands = {
   help,
@@ -20,20 +30,34 @@ export const commands = {
   stats,
   ping,
   del,
-  delete: del, // alias
+  delete: del,
   poll,
-  sondage: poll, // alias FR
+  sondage: poll,
   kick,
-  ban: kick, // alias
+  ban: kick,
   promote,
   demote,
   tagall,
-  everyone: tagall, // alias
+  everyone: tagall,
+  // Jeux
+  jeu,
+  jeux: jeu,
+  quiz,
+  devinette,
+  vraifaux,
+  motmystere,
+  stop,
+  classement,
+  leaderboard: classement,
+  // Mémoire
+  remember,
+  retiens: remember,
+  memories,
+  souvenirs: memories,
+  forget,
+  oublie: forget,
 };
 
-/**
- * Parse "/cmd args..." -> { name, args } ou null
- */
 export function parseCommand(text = "") {
   const t = text.trim();
   if (!t.startsWith("/")) return null;

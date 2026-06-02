@@ -50,4 +50,13 @@ export const config = {
     maxTokens: 256,
   },
   silenceMinutes: 240,
+
+  proactive: {
+    enabled: bool(process.env.PROACTIVE_MODE, true),
+    maxPerDay: parseInt(process.env.MAX_PROACTIVE_MESSAGES_PER_DAY || "2", 10),
+    welcomeNewMembers: bool(process.env.WELCOME_NEW_MEMBERS, true),
+  },
+  games: {
+    autoFridayQuiz: bool(process.env.AUTO_FRIDAY_QUIZ, true),
+  },
 };

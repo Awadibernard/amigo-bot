@@ -1,6 +1,10 @@
+// ============================================================
+// AI — Google Gemini avec personnalité Ayumi + mémoire utilisateur
+// ============================================================
 import { config } from "../config.js";
 import { logger } from "../logger.js";
-import { SYSTEM_PROMPT, FEW_SHOTS } from "../persona/prompt.js";
+import { buildSystemPrompt, FEW_SHOTS } from "./personality.js";
+import { getUserContext } from "../memory/index.js";
 import { stats } from "../dashboard/state.js";
 
 // ============ Sanity check au boot ============
@@ -44,7 +48,6 @@ function allowed(userJid) {
 
 // ============ Appel API Gemini ============
 function toGeminiContents(history, userMessage) {
-  // Few-shots + history + dernier message
   const all = [...FEW_SHOTS, ...history, { role: "user", content: userMessage }];
   return all.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -52,13 +55,28 @@ function toGeminiContents(history, userMessage) {
   }));
 }
 
-export async function askAyumi({ userJid, history, userMessage }) {
+/**
+ * @param {{
+ *   userJid: string,
+ *   userName?: string,
+ *   history?: Array<{role:'user'|'assistant', content:string}>,
+ *   userMessage: string,
+ *   bypassQuota?: boolean,
+ * }} args
+ */
+export async function askAyumi({
+  userJid,
+  userName,
+  history = [],
+  userMessage,
+  bypassQuota = false,
+}) {
   if (!config.gemini.apiKey) {
     stats.aiErrors += 1;
     stats.lastAiError = "GEMINI_API_KEY manquante";
     return "⚠️ IA indisponible : clé GEMINI_API_KEY manquante 🔑";
   }
-  if (!allowed(userJid)) {
+  if (!bypassQuota && !allowed(userJid)) {
     return "J'ai déjà trop parlé aujourd'hui, repose-moi plus tard 😮‍💨";
   }
 
@@ -67,17 +85,24 @@ export async function askAyumi({ userJid, history, userMessage }) {
     model,
   )}:generateContent?key=${encodeURIComponent(config.gemini.apiKey)}`;
 
+  // Mémoire user → injectée dans le system prompt
+  const userContext = getUserContext(userJid);
+  const systemPrompt = buildSystemPrompt({ userName, userContext });
+
   const body = {
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: toGeminiContents(history, userMessage),
     generationConfig: {
-      temperature: 0.85,
+      temperature: 0.9,
       maxOutputTokens: config.ai.maxTokens,
     },
   };
 
   if (config.debugAi) {
-    logger.info({ model, msgs: body.contents.length }, "→ Gemini");
+    logger.info(
+      { model, msgs: body.contents.length, hasUserCtx: !!userContext },
+      "→ Gemini",
+    );
   }
 
   const ctrl = new AbortController();
@@ -85,6 +110,7 @@ export async function askAyumi({ userJid, history, userMessage }) {
   const t0 = Date.now();
   stats.aiRequests += 1;
   stats.lastModel = model;
+  stats.lastContextSize = body.contents.length;
 
   try {
     const res = await fetch(url, {
@@ -96,6 +122,7 @@ export async function askAyumi({ userJid, history, userMessage }) {
     const ms = Date.now() - t0;
     stats.lastAiStatus = res.status;
     stats.lastAiLatencyMs = ms;
+    stats.totalAiLatencyMs = (stats.totalAiLatencyMs || 0) + ms;
 
     if (!res.ok) {
       const txt = (await res.text()).slice(0, 500);
@@ -120,7 +147,7 @@ export async function askAyumi({ userJid, history, userMessage }) {
       stats.aiErrors += 1;
       const blocked = data?.promptFeedback?.blockReason;
       stats.lastAiError = blocked ? `bloqué: ${blocked}` : "réponse vide";
-      logger.warn({ blocked, data: JSON.stringify(data).slice(0, 300) }, "Gemini vide");
+      logger.warn({ blocked }, "Gemini vide");
       return blocked
         ? "🙊 Gemini a bloqué la réponse (safety)."
         : "🤔 (réponse vide)";

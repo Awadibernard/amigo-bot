@@ -10,6 +10,7 @@ import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
 import { recentMessages } from "../db/repo.js";
 import { stats } from "../dashboard/state.js";
+import { tryAnswer, hasActiveGame } from "../games/index.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
 
@@ -117,6 +118,16 @@ export async function handleMessage(ctx) {
     return;
   }
 
+  // --- Réponse à un jeu en cours ---
+  if (hasActiveGame(groupJid)) {
+    const r = tryAnswer(groupJid, userJid, pushName, text);
+    if (r?.correct) {
+      await sock.sendMessage(groupJid, { text: r.text }, { quoted: msg });
+      return;
+    }
+    // Mauvaise réponse → on laisse passer silencieusement (pas de spam)
+  }
+
   // --- IA légère : seulement si on parle au bot ---
   const isMention = ctx.mentioned?.includes(botJid);
   const isReplyToBot = ctx.quotedJid === botJid;
@@ -132,6 +143,7 @@ export async function handleMessage(ctx) {
 
     const reply = await askAyumi({
       userJid,
+      userName: pushName,
       history: recent.slice(0, -1),
       userMessage: text,
     });

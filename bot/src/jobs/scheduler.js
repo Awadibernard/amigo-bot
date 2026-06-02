@@ -3,7 +3,38 @@ import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { lastMessageTs } from "../db/repo.js";
 import { pickRandom } from "../utils/text.js";
-import { QUESTIONS_DU_JOUR, DEBATS, RELANCES_SILENCE } from "../persona/canned.js";
+import {
+  QUESTIONS_DU_JOUR,
+  DEBATS,
+  RELANCES_SILENCE,
+} from "../persona/canned.js";
+import { startGame } from "../games/index.js";
+import { stats } from "../dashboard/state.js";
+
+function dayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function canSendProactive() {
+  if (!config.proactive.enabled) return false;
+  const d = dayKey();
+  if (stats.proactiveDay !== d) {
+    stats.proactiveDay = d;
+    stats.proactiveSentToday = 0;
+  }
+  return stats.proactiveSentToday < config.proactive.maxPerDay;
+}
+
+async function proactiveSend(sock, jid, text) {
+  if (!canSendProactive()) {
+    logger.info("⏸ Proactive : quota atteint pour aujourd'hui");
+    return false;
+  }
+  await sock.sendMessage(jid, { text });
+  stats.proactiveSentToday += 1;
+  logger.info({ count: stats.proactiveSentToday }, "📣 Message proactif envoyé");
+  return true;
+}
 
 export function startScheduler(sock, getGroupJid) {
   const tz = config.tz;
@@ -14,7 +45,7 @@ export function startScheduler(sock, getGroupJid) {
     async () => {
       const jid = getGroupJid();
       if (!jid) return;
-      await sock.sendMessage(jid, { text: pickRandom(QUESTIONS_DU_JOUR) });
+      await proactiveSend(sock, jid, pickRandom(QUESTIONS_DU_JOUR));
     },
     { timezone: tz },
   );
@@ -26,13 +57,13 @@ export function startScheduler(sock, getGroupJid) {
       const jid = getGroupJid();
       if (!jid) return;
       if (Math.random() < 0.5) {
-        await sock.sendMessage(jid, { text: pickRandom(DEBATS) });
+        await proactiveSend(sock, jid, pickRandom(DEBATS));
       }
     },
     { timezone: tz },
   );
 
-  // Relance si silence : check toutes les heures (10h-23h)
+  // Relance si silence
   cron.schedule(
     "15 10-23 * * *",
     async () => {
@@ -42,11 +73,29 @@ export function startScheduler(sock, getGroupJid) {
       if (!last) return;
       const minutes = (Date.now() - last) / 60000;
       if (minutes >= config.silenceMinutes) {
-        await sock.sendMessage(jid, { text: pickRandom(RELANCES_SILENCE) });
+        await proactiveSend(sock, jid, pickRandom(RELANCES_SILENCE));
       }
     },
     { timezone: tz },
   );
 
-  logger.info({ tz }, "Scheduler started");
+  // Quiz auto du vendredi 18h
+  if (config.games.autoFridayQuiz) {
+    cron.schedule(
+      "0 18 * * 5",
+      async () => {
+        const jid = getGroupJid();
+        if (!jid) return;
+        const r = startGame(jid, "quiz");
+        if (r.text) {
+          await sock.sendMessage(jid, {
+            text: "🎉 C'est vendredi ! Un petit quiz pour bien démarrer la soirée :\n\n" + r.text,
+          });
+        }
+      },
+      { timezone: tz },
+    );
+  }
+
+  logger.info({ tz, proactive: config.proactive.enabled }, "Scheduler started");
 }

@@ -12,15 +12,20 @@ export const stats = {
   lastAiStatus: 0,
   lastAiError: "",
   lastAiLatencyMs: 0,
+  totalAiLatencyMs: 0,
+  lastContextSize: 0,
 
   // Activité
   messagesSeen: 0,
   commandsRun: 0,
   warnsIssued: 0,
   deletes: 0,
+
+  // Proactif
+  proactiveSentToday: 0,
+  proactiveDay: "",
 };
 
-// Ring buffer de logs pour le dashboard
 const MAX_LOGS = 300;
 const logs = [];
 
