@@ -14,6 +14,10 @@ export const stats = {
   lastAiLatencyMs: 0,
   totalAiLatencyMs: 0,
   lastContextSize: 0,
+  lastPromptChars: 0,
+  lastResponseChars: 0,
+  truncatedResponses: 0,
+  recentAiErrors: [],
 
   // Activité
   messagesSeen: 0,
@@ -21,9 +25,16 @@ export const stats = {
   warnsIssued: 0,
   deletes: 0,
 
+  // Mémoire / sessions / jeux
+  summariesStored: 0,
+  autoFactsExtracted: 0,
+
   // Proactif
   proactiveSentToday: 0,
   proactiveDay: "",
+  quizAutoSentToday: 0,
+  debateAutoSentToday: 0,
+  scheduledRunCount: 0,
 };
 
 const MAX_LOGS = 300;

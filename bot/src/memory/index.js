@@ -148,3 +148,6 @@ const topStmt = db.prepare(
 export function topPlayers(limit = 10) {
   return topStmt.all(limit);
 }
+
+// Ré-exports pratiques pour le context builder
+export { latestSummary, summariesCount } from "./summarizer.js";

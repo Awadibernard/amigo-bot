@@ -16,10 +16,18 @@ import {
   devinette,
   vraifaux,
   motmystere,
+  culture,
+  quisuisje,
+  blindtext,
+  actionverite,
+  roleplay,
   stop,
+  jouer,
+  score,
 } from "./jeu.js";
 import { classement } from "./classement.js";
 import { remember, memories, forget } from "./remember.js";
+import { creerjeu } from "./creerjeu.js";
 
 export const commands = {
   help,
@@ -39,6 +47,7 @@ export const commands = {
   demote,
   tagall,
   everyone: tagall,
+
   // Jeux
   jeu,
   jeux: jeu,
@@ -46,9 +55,24 @@ export const commands = {
   devinette,
   vraifaux,
   motmystere,
+  culture,
+  quisuisje,
+  qsj: quisuisje,
+  blindtext,
+  blind: blindtext,
+  actionverite,
+  av: actionverite,
+  roleplay,
+  rp: roleplay,
   stop,
+  jouer,
+  join: jouer,
+  score,
   classement,
   leaderboard: classement,
+  creerjeu,
+  newgame: creerjeu,
+
   // Mémoire
   remember,
   retiens: remember,

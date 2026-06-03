@@ -8,9 +8,22 @@ import { detectMediaType, MEDIA_LABEL } from "../moderation/media.js";
 import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
-import { recentMessages } from "../db/repo.js";
 import { stats } from "../dashboard/state.js";
-import { tryAnswer, hasActiveGame } from "../games/index.js";
+import { tryAnswer, hasActiveGame } from "../games/engine.js";
+import { buildAiContext } from "../memory/context.js";
+import { extractAndStore } from "../memory/extractor.js";
+import {
+  bumpMessageCounter,
+  shouldSummarize,
+  maybeSummarize,
+} from "../memory/summarizer.js";
+import {
+  hasSession,
+  openSession,
+  closeSession,
+} from "../sessions/index.js";
+import { sendChunked } from "../utils/chunk.js";
+import { recentMessages } from "../db/repo.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
 
@@ -26,15 +39,16 @@ async function tryDelete(sock, groupJid, msg, reason = "") {
       },
     });
     stats.deletes += 1;
-    logger.info({ reason, id: msg.key.id }, "🗑️  message supprimé");
+    logger.info({ reason, id: msg.key.id }, "🗑️ message supprimé");
     return true;
   } catch (err) {
-    logger.warn(
-      { err: err?.message, reason },
-      "❌ delete failed (bot pas admin du groupe ?)",
-    );
+    logger.warn({ err: err?.message, reason }, "❌ delete failed");
     return false;
   }
+}
+
+async function sendReply(sock, jid, text, msg) {
+  return sendChunked(sock, jid, text, { quoted: msg });
 }
 
 export async function handleMessage(ctx) {
@@ -75,7 +89,7 @@ export async function handleMessage(ctx) {
     }
   }
 
-  // --- Blacklist (insultes + sexuel explicite) ---
+  // --- Blacklist ---
   const bad = containsBlacklisted(text);
   if (bad) {
     const { total } = warnUser(userJid, `mot interdit: ${bad}`);
@@ -98,12 +112,12 @@ export async function handleMessage(ctx) {
   const cmd = parseCommand(text);
   if (cmd && commands[cmd.name]) {
     stats.commandsRun += 1;
-    logger.info({ cmd: cmd.name, by: userJid }, "▶️  commande");
+    logger.info({ cmd: cmd.name, by: userJid }, "▶️ commande");
     try {
       const result = await commands[cmd.name]({ ...ctx, args: cmd.args });
       if (result) {
         if (typeof result === "string") {
-          await sock.sendMessage(groupJid, { text: result });
+          await sendReply(sock, groupJid, result, msg);
         } else {
           await sock.sendMessage(groupJid, result);
         }
@@ -122,33 +136,58 @@ export async function handleMessage(ctx) {
   if (hasActiveGame(groupJid)) {
     const r = tryAnswer(groupJid, userJid, pushName, text);
     if (r?.correct) {
-      await sock.sendMessage(groupJid, { text: r.text }, { quoted: msg });
+      await sendReply(sock, groupJid, r.text, msg);
       return;
     }
-    // Mauvaise réponse → on laisse passer silencieusement (pas de spam)
+    // sinon on continue normalement
   }
 
-  // --- IA légère : seulement si on parle au bot ---
+  // --- Extraction auto d'infos ---
+  try {
+    const saved = extractAndStore({ text, userJid });
+    if (saved.length) stats.autoFactsExtracted += saved.length;
+  } catch (err) {
+    logger.warn({ err: err?.message }, "extractor failed");
+  }
+
+  // --- Résumé périodique ---
+  bumpMessageCounter(groupJid);
+  if (shouldSummarize(groupJid)) {
+    const recent = recentMessages(groupJid, 60)
+      .map((m) => `${m.user_jid === botJid ? "Ayumi" : "user"}: ${m.content}`)
+      .join("\n");
+    maybeSummarize({ groupJid, recentText: recent }); // fire & forget
+  }
+
+  // --- Conditions de déclenchement IA ---
   const isMention = ctx.mentioned?.includes(botJid);
   const isReplyToBot = ctx.quotedJid === botJid;
   const looksAddressed = BOT_TRIGGER_RE.test(text);
+  const inSession = hasSession(groupJid, userJid);
 
-  if (isMention || isReplyToBot || looksAddressed) {
-    const recent = recentMessages(groupJid, config.ai.historyLength)
-      .filter((m) => m.content)
-      .map((m) => ({
-        role: m.user_jid === botJid ? "assistant" : "user",
-        content: m.content,
-      }));
+  if (!(isMention || isReplyToBot || looksAddressed || inSession)) return;
 
-    const reply = await askAyumi({
-      userJid,
-      userName: pushName,
-      history: recent.slice(0, -1),
-      userMessage: text,
-    });
-    if (reply) {
-      await sock.sendMessage(groupJid, { text: reply }, { quoted: msg });
+  // --- IA avec contexte complet ---
+  const { systemExtras, history } = buildAiContext({ groupJid, userJid, botJid });
+  const reply = await askAyumi({
+    userJid,
+    userName: pushName,
+    history: history.slice(0, -1),
+    userMessage: text,
+    systemExtras,
+  });
+  if (reply) {
+    await sendReply(sock, groupJid, reply, msg);
+    // Si Ayumi pose une question → ouvre/prolonge la session
+    if (/\?\s*$/.test(reply.trim())) {
+      openSession(groupJid, userJid, { ayumiAsked: true });
+    } else if (inSession) {
+      // Continue la conversation pour quelques échanges supplémentaires
+      openSession(groupJid, userJid, { ayumiAsked: false });
+    } else {
+      openSession(groupJid, userJid, { ayumiAsked: false });
     }
+  } else {
+    closeSession(groupJid, userJid);
   }
 }
