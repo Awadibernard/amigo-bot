@@ -3,7 +3,7 @@ import { logger } from "./logger.js";
 import { config } from "./config.js";
 import { runtime } from "./runtime.js";
 import { startWhatsApp } from "./core/whatsapp.js";
-import { startScheduler } from "./jobs/scheduler.js";
+import { startScheduler } from "./scheduler/index.js";
 import { kvGet, kvSet } from "./db/repo.js";
 import { startDashboard } from "./dashboard/server.js";
 
