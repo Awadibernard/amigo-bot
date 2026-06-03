@@ -1,13 +1,11 @@
 // ============================================================
-// AI — Google Gemini avec personnalité Ayumi + mémoire utilisateur
+// AI — Google Gemini (avec personnalité Ayumi + mémoire + résumés)
 // ============================================================
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { buildSystemPrompt, FEW_SHOTS } from "./personality.js";
-import { getUserContext } from "../memory/index.js";
 import { stats } from "../dashboard/state.js";
 
-// ============ Sanity check au boot ============
 const key = config.gemini.apiKey;
 if (!key) {
   logger.error("❌ GEMINI_API_KEY manquante dans bot/.env");
@@ -16,14 +14,15 @@ if (!key) {
     {
       length: key.length,
       prefix: key.slice(0, 6) + "…",
-      suffix: "…" + key.slice(-4),
       model: config.gemini.model,
+      maxTokens: config.ai.maxTokens,
+      timeoutMs: config.gemini.timeoutMs,
     },
     "✅ Gemini prêt",
   );
 }
 
-// ============ Quotas locaux (anti-abus) ============
+// ===== Quotas =====
 const userHits = new Map();
 let dayHits = { day: dayKey(), count: 0 };
 function dayKey() {
@@ -46,9 +45,12 @@ function allowed(userJid) {
   return true;
 }
 
-// ============ Appel API Gemini ============
-function toGeminiContents(history, userMessage) {
-  const all = [...FEW_SHOTS, ...history, { role: "user", content: userMessage }];
+function toGeminiContents(history, userMessage, includeFewShots) {
+  const all = [
+    ...(includeFewShots ? FEW_SHOTS : []),
+    ...history,
+    { role: "user", content: userMessage },
+  ];
   return all.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
@@ -57,19 +59,24 @@ function toGeminiContents(history, userMessage) {
 
 /**
  * @param {{
- *   userJid: string,
- *   userName?: string,
- *   history?: Array<{role:'user'|'assistant', content:string}>,
+ *   userJid: string, userName?: string,
+ *   history?: Array<{role,content}>,
+ *   historyOverride?: Array<{role,content}>,
  *   userMessage: string,
+ *   systemExtras?: string,
  *   bypassQuota?: boolean,
+ *   isInternal?: boolean,  // résumé/extracteur : pas de few-shots + log discret
  * }} args
  */
 export async function askAyumi({
   userJid,
   userName,
   history = [],
+  historyOverride,
   userMessage,
+  systemExtras = "",
   bypassQuota = false,
+  isInternal = false,
 }) {
   if (!config.gemini.apiKey) {
     stats.aiErrors += 1;
@@ -85,22 +92,30 @@ export async function askAyumi({
     model,
   )}:generateContent?key=${encodeURIComponent(config.gemini.apiKey)}`;
 
-  // Mémoire user → injectée dans le system prompt
-  const userContext = getUserContext(userJid);
-  const systemPrompt = buildSystemPrompt({ userName, userContext });
+  const systemPrompt = isInternal
+    ? systemExtras || "Réponds de manière concise et factuelle."
+    : buildSystemPrompt({
+        userName,
+        userContext: systemExtras,
+      });
 
+  const hist = historyOverride !== undefined ? historyOverride : history;
   const body = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents: toGeminiContents(history, userMessage),
+    contents: toGeminiContents(hist, userMessage, !isInternal),
     generationConfig: {
-      temperature: 0.9,
+      temperature: isInternal ? 0.3 : 0.9,
       maxOutputTokens: config.ai.maxTokens,
     },
   };
 
+  const promptChars =
+    systemPrompt.length +
+    body.contents.reduce((n, c) => n + (c.parts?.[0]?.text?.length || 0), 0);
+
   if (config.debugAi) {
     logger.info(
-      { model, msgs: body.contents.length, hasUserCtx: !!userContext },
+      { model, msgs: body.contents.length, promptChars, internal: isInternal },
       "→ Gemini",
     );
   }
@@ -108,9 +123,12 @@ export async function askAyumi({
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), config.gemini.timeoutMs);
   const t0 = Date.now();
-  stats.aiRequests += 1;
-  stats.lastModel = model;
-  stats.lastContextSize = body.contents.length;
+  if (!isInternal) {
+    stats.aiRequests += 1;
+    stats.lastModel = model;
+    stats.lastContextSize = body.contents.length;
+    stats.lastPromptChars = promptChars;
+  }
 
   try {
     const res = await fetch(url, {
@@ -120,14 +138,17 @@ export async function askAyumi({
       signal: ctrl.signal,
     });
     const ms = Date.now() - t0;
-    stats.lastAiStatus = res.status;
-    stats.lastAiLatencyMs = ms;
-    stats.totalAiLatencyMs = (stats.totalAiLatencyMs || 0) + ms;
+    if (!isInternal) {
+      stats.lastAiStatus = res.status;
+      stats.lastAiLatencyMs = ms;
+      stats.totalAiLatencyMs = (stats.totalAiLatencyMs || 0) + ms;
+    }
 
     if (!res.ok) {
       const txt = (await res.text()).slice(0, 500);
       stats.aiErrors += 1;
       stats.lastAiError = `HTTP ${res.status}: ${txt.slice(0, 200)}`;
+      pushAiError({ status: res.status, body: txt, model });
       logger.error({ status: res.status, model, body: txt }, "❌ Gemini");
       if (res.status === 401 || res.status === 403)
         return "⚠️ Clé GEMINI_API_KEY invalide 🔑";
@@ -137,30 +158,46 @@ export async function askAyumi({
     }
 
     const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts
+    const cand = data?.candidates?.[0];
+    const text = cand?.content?.parts
       ?.map((p) => p.text)
       .filter(Boolean)
       .join("")
       .trim();
+    const truncated = cand?.finishReason === "MAX_TOKENS";
 
     if (!text) {
       stats.aiErrors += 1;
       const blocked = data?.promptFeedback?.blockReason;
       stats.lastAiError = blocked ? `bloqué: ${blocked}` : "réponse vide";
-      logger.warn({ blocked }, "Gemini vide");
+      pushAiError({ status: 200, body: blocked || "empty", model });
+      logger.warn({ blocked, finishReason: cand?.finishReason }, "Gemini vide");
       return blocked
         ? "🙊 Gemini a bloqué la réponse (safety)."
         : "🤔 (réponse vide)";
     }
 
-    stats.aiSuccess += 1;
-    stats.lastAiError = "";
-    if (config.debugAi) logger.info({ model, status: 200, ms }, "← Gemini OK");
+    if (!isInternal) {
+      stats.aiSuccess += 1;
+      stats.lastAiError = "";
+      stats.lastResponseChars = text.length;
+      if (truncated) {
+        stats.truncatedResponses = (stats.truncatedResponses || 0) + 1;
+        logger.warn({ chars: text.length }, "✂️ réponse tronquée (MAX_TOKENS)");
+      }
+    }
+    if (config.debugAi) {
+      logger.info(
+        { model, status: 200, ms, chars: text.length, truncated },
+        "← Gemini OK",
+      );
+    }
     return text;
   } catch (err) {
     stats.aiErrors += 1;
     const msg = err?.name === "AbortError" ? "timeout" : err?.message || String(err);
     stats.lastAiError = msg;
+    pushAiError({ status: 0, body: msg, model });
     logger.error({ err: msg, model }, "Gemini call failed");
     return msg === "timeout"
       ? "⏱️ Gemini a mis trop de temps."
@@ -168,4 +205,10 @@ export async function askAyumi({
   } finally {
     clearTimeout(timer);
   }
+}
+
+function pushAiError(e) {
+  stats.recentAiErrors = stats.recentAiErrors || [];
+  stats.recentAiErrors.push({ ...e, ts: Date.now() });
+  if (stats.recentAiErrors.length > 15) stats.recentAiErrors.shift();
 }
