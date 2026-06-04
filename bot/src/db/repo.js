@@ -22,6 +22,10 @@ const insertMsgStmt = db.prepare(
 export function saveMessage(userJid, groupJid, content) {
   insertMsgStmt.run(userJid, groupJid, content || "", now());
 }
+export function saveBotMessage(botJid, groupJid, content) {
+  if (!botJid || !groupJid || !content) return;
+  insertMsgStmt.run(botJid, groupJid, content, now());
+}
 
 const recentMsgsStmt = db.prepare(
   `SELECT user_jid, content, ts FROM messages
