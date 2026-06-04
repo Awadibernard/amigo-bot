@@ -1,4 +1,4 @@
-// Test d'intégration léger du handleMessage : on stub askAyumi et le sock.
+// Test d'intégration léger du handleMessage : stub global fetch pour Gemini.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -7,9 +7,30 @@ process.env.CONVERSATIONAL_MODE = "true";
 process.env.DEBUG_CONVERSATION = "true";
 process.env.BLOCK_LINKS = "false";
 
-// Stub Gemini AVANT import handler
-const gemini = await import("../src/ai/gemini.js");
-gemini.askAyumi = async ({ userMessage }) => "Réponse test: " + userMessage.slice(0, 20);
+// Stub global fetch — toutes les requêtes Gemini renvoient une réponse OK.
+globalThis.fetch = async (url, opts) => {
+  const body = opts?.body ? JSON.parse(opts.body) : {};
+  const lastUserText =
+    body.contents?.filter((c) => c.role === "user").slice(-1)[0]?.parts?.[0]
+      ?.text || "ok";
+  return {
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        candidates: [
+          {
+            content: { parts: [{ text: "Réponse test: " + lastUserText.slice(0, 30) }] },
+            finishReason: "STOP",
+          },
+        ],
+      };
+    },
+    async text() {
+      return "";
+    },
+  };
+};
 
 const { handleMessage } = await import("../src/handlers/message.js");
 const { getDebug } = await import("../src/dashboard/state.js");
@@ -30,7 +51,10 @@ function makeCtx(text, { mention = false, reply = false, id = "m" + Math.random(
   };
   return {
     sock,
-    msg: { key: { id, fromMe: false, remoteJid: G, participant: U }, message: { conversation: text } },
+    msg: {
+      key: { id, fromMe: false, remoteJid: G, participant: U },
+      message: { conversation: text },
+    },
     text,
     userJid: U,
     groupJid: G,
@@ -43,11 +67,10 @@ function makeCtx(text, { mention = false, reply = false, id = "m" + Math.random(
   };
 }
 
-test("message sans trigger → ignoré avec raison no-trigger", async () => {
+test("message sans trigger → ignoré (no-trigger)", async () => {
   _resetDedupeForTests();
   closeSession(G, U);
-  const ctx = makeCtx("salut tout le monde");
-  await handleMessage(ctx);
+  await handleMessage(makeCtx("salut tout le monde"));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "IGNORED");
   assert.equal(last.reason, "no-trigger");
@@ -56,20 +79,18 @@ test("message sans trigger → ignoré avec raison no-trigger", async () => {
 test("mention → traité par IA, ouvre session", async () => {
   _resetDedupeForTests();
   closeSession(G, U);
-  const ctx = makeCtx("hey @ayumi ça va ?", { mention: true });
-  await handleMessage(ctx);
+  await handleMessage(makeCtx("hey ça va ?", { mention: true }));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "AI");
   assert.equal(hasSession(G, U), true);
 });
 
-test("message suivant en session est traité sans mention", async () => {
+test("message suivant en session traité sans mention", async () => {
   _resetDedupeForTests();
   closeSession(G, U);
   await handleMessage(makeCtx("ayumi tu es là ?"));
   assert.equal(hasSession(G, U), true);
-  const ctx2 = makeCtx("oui je suis là");
-  await handleMessage(ctx2);
+  await handleMessage(makeCtx("oui je suis là"));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "AI");
   assert.equal(last.reason, "session");
@@ -78,8 +99,7 @@ test("message suivant en session est traité sans mention", async () => {
 test("reply à Ayumi → traité même hors session", async () => {
   _resetDedupeForTests();
   closeSession(G, U);
-  const ctx = makeCtx("merci !", { reply: true });
-  await handleMessage(ctx);
+  await handleMessage(makeCtx("merci !", { reply: true }));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "AI");
   assert.equal(last.reason, "reply");
