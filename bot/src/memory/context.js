@@ -1,17 +1,13 @@
 // ============================================================
-// CONTEXT BUILDER — assemble tout ce qu'Ayumi doit "savoir"
-// avant de générer une réponse.
+// CONTEXT BUILDER — assemble ce qu'Ayumi doit "savoir".
+// Le contenu est encapsulé dans des balises pour empêcher
+// le modèle de le réciter mot pour mot dans sa réponse.
 // ============================================================
-import { getUserContext, latestSummary, listFacts } from "./index.js";
+import { getUserContext, listFacts } from "./index.js";
+import { latestSummary } from "./summarizer.js";
 import { recentMessages } from "../db/repo.js";
 import { config } from "../config.js";
 
-/**
- * Renvoie { systemExtras, history } prêts à injecter dans Gemini.
- * - systemExtras : texte additionnel pour le system prompt
- *   (mémoire user + faits groupe + dernier résumé)
- * - history : derniers messages bruts au format {role, content}
- */
 export function buildAiContext({ groupJid, userJid, botJid }) {
   const userMem = getUserContext(userJid);
   const facts = listFacts(groupJid || "group", 5)
@@ -19,10 +15,21 @@ export function buildAiContext({ groupJid, userJid, botJid }) {
     .join("\n");
   const summary = latestSummary(groupJid);
 
-  const parts = [];
-  if (userMem) parts.push("Mémoire utilisateur :\n" + userMem);
-  if (facts) parts.push("Faits notables du groupe :\n" + facts);
-  if (summary) parts.push("Résumé des échanges récents :\n" + summary);
+  const blocks = [];
+  if (userMem) blocks.push("<USER_MEMORY>\n" + userMem + "\n</USER_MEMORY>");
+  if (facts) blocks.push("<GROUP_FACTS>\n" + facts + "\n</GROUP_FACTS>");
+  if (summary) blocks.push("<RECENT_SUMMARY>\n" + summary + "\n</RECENT_SUMMARY>");
+
+  const systemExtras = blocks.length
+    ? [
+        "Contexte privé ci-dessous. Règles strictes :",
+        "- Ne JAMAIS lister ou citer ce contexte mot pour mot.",
+        "- L'utiliser UNIQUEMENT s'il répond directement à la question.",
+        "- Si on te demande ce que tu sais sur quelqu'un, résume en 1 phrase naturelle.",
+        "",
+        blocks.join("\n\n"),
+      ].join("\n")
+    : "";
 
   const history = recentMessages(groupJid, config.ai.historyLength)
     .filter((m) => m.content)
@@ -32,13 +39,14 @@ export function buildAiContext({ groupJid, userJid, botJid }) {
     }));
 
   return {
-    systemExtras: parts.join("\n\n"),
+    systemExtras,
     history,
     sizes: {
-      userMem: userMem.length,
-      facts: facts.length,
-      summary: summary ? summary.length : 0,
-      history: history.length,
+      userMemChars: userMem.length,
+      factsChars: facts.length,
+      summaryChars: summary ? summary.length : 0,
+      historyMsgs: history.length,
+      promptChars: systemExtras.length,
     },
   };
 }

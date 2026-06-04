@@ -36,6 +36,7 @@ export const config = {
   logLevel: process.env.LOG_LEVEL || "info",
   debug: bool(process.env.DEBUG, false),
   debugAi: bool(process.env.DEBUG_AI, false),
+  debugConversation: bool(process.env.DEBUG_CONVERSATION, false),
   tz: process.env.TZ || "Europe/Paris",
   dashboardPort: num(process.env.DASHBOARD_PORT, 3000),
 

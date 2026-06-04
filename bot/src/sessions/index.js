@@ -1,18 +1,14 @@
 // ============================================================
 // SESSIONS DE DISCUSSION
-// Conserve un état conversationnel court par (groupJid, userJid).
-// Si Ayumi a parlé récemment à un user (ou posé une question),
-// la prochaine réponse de ce user est traitée comme adressée à elle.
+// État conversationnel court par (groupJid, userJid).
+// TTL glissant : chaque tour reçu prolonge l'expiration.
 // ============================================================
 import { config } from "../config.js";
 
 const TTL_MS = 3 * 60 * 1000; // 3 minutes
-// Clé : `${groupJid}::${userJid}`
 const sessions = new Map();
 
-function key(g, u) {
-  return `${g}::${u}`;
-}
+const key = (g, u) => `${g}::${u}`;
 
 export function openSession(groupJid, userJid, { ayumiAsked = false } = {}) {
   if (!config.conversationalMode) return;
@@ -20,8 +16,16 @@ export function openSession(groupJid, userJid, { ayumiAsked = false } = {}) {
     groupJid,
     userJid,
     ayumiAsked,
+    openedAt: Date.now(),
     expiresAt: Date.now() + TTL_MS,
   });
+}
+
+export function touchSession(groupJid, userJid) {
+  if (!config.conversationalMode) return;
+  const s = sessions.get(key(groupJid, userJid));
+  if (!s) return;
+  s.expiresAt = Date.now() + TTL_MS;
 }
 
 export function hasSession(groupJid, userJid) {
@@ -35,6 +39,16 @@ export function hasSession(groupJid, userJid) {
   return true;
 }
 
+export function getSession(groupJid, userJid) {
+  const s = sessions.get(key(groupJid, userJid));
+  if (!s) return null;
+  if (Date.now() > s.expiresAt) {
+    sessions.delete(key(groupJid, userJid));
+    return null;
+  }
+  return s;
+}
+
 export function closeSession(groupJid, userJid) {
   sessions.delete(key(groupJid, userJid));
 }
@@ -44,7 +58,7 @@ export function activeSessions() {
   const out = [];
   for (const [k, s] of sessions) {
     if (now > s.expiresAt) sessions.delete(k);
-    else out.push(s);
+    else out.push({ ...s, expiresInMs: s.expiresAt - now });
   }
   return out;
 }

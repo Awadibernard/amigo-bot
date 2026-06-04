@@ -96,23 +96,29 @@ function buildContext(sock, msg) {
   const remoteJid = msg.key.remoteJid || "";
   const isGroup = remoteJid.endsWith("@g.us");
   const groupJid = isGroup ? remoteJid : null;
-  const userJid = isGroup ? msg.key.participant || "" : remoteJid;
+  const userJid = (isGroup ? msg.key.participant || "" : remoteJid).replace(/:\d+(?=@)/, "");
   const isFromBot = !!msg.key.fromMe;
-  const botJid = sock.user?.id?.replace(/:\d+@/, "@") || sock.user?.id || "";
+  const rawBot = sock.user?.id || "";
+  const botJid = rawBot.replace(/:\d+(?=@)/, "");
 
-  // Texte
   const m = msg.message;
   const text =
     m.conversation ||
     m.extendedTextMessage?.text ||
     m.imageMessage?.caption ||
     m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
     "";
 
-  // Mentions / réponse
-  const ctxInfo = m.extendedTextMessage?.contextInfo;
-  const mentioned = ctxInfo?.mentionedJid || [];
-  const quotedJid = ctxInfo?.participant || null;
+  const ctxInfo =
+    m.extendedTextMessage?.contextInfo ||
+    m.imageMessage?.contextInfo ||
+    m.videoMessage?.contextInfo ||
+    m.stickerMessage?.contextInfo ||
+    m.documentMessage?.contextInfo ||
+    null;
+  const mentioned = (ctxInfo?.mentionedJid || []).map((j) => j.replace(/:\d+(?=@)/, ""));
+  const quotedJid = (ctxInfo?.participant || "").replace(/:\d+(?=@)/, "") || null;
   const quotedStanzaId = ctxInfo?.stanzaId || null;
 
   return {
