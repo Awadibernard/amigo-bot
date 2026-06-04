@@ -24,6 +24,7 @@ export const stats = {
   commandsRun: 0,
   warnsIssued: 0,
   deletes: 0,
+  duplicatesSkipped: 0,
 
   // Mémoire / sessions / jeux
   summariesStored: 0,
@@ -35,6 +36,10 @@ export const stats = {
   quizAutoSentToday: 0,
   debateAutoSentToday: 0,
   scheduledRunCount: 0,
+
+  // Dernier prompt envoyé (debug)
+  lastContext: null, // { systemExtras, history, userMessage, ts, userJid, groupJid, sizes }
+  lastDecision: null, // { decision, reason, ts }
 };
 
 const MAX_LOGS = 300;
@@ -47,4 +52,26 @@ export function pushLog(level, obj, msg) {
 
 export function getLogs() {
   return logs;
+}
+
+// ===== Ring buffer DEBUG_CONVERSATION =====
+const MAX_DEBUG = 100;
+const debugBuf = [];
+
+export function pushDebug(entry) {
+  debugBuf.push({ ts: Date.now(), ...entry });
+  if (debugBuf.length > MAX_DEBUG) debugBuf.shift();
+  stats.lastDecision = {
+    decision: entry.decision,
+    reason: entry.reason,
+    ts: Date.now(),
+  };
+}
+
+export function getDebug() {
+  return debugBuf;
+}
+
+export function setLastContext(ctx) {
+  stats.lastContext = { ts: Date.now(), ...ctx };
 }

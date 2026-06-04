@@ -1,6 +1,6 @@
 import { logger } from "../logger.js";
 import { config } from "../config.js";
-import { trackUser, saveMessage } from "../db/repo.js";
+import { trackUser, saveMessage, saveBotMessage } from "../db/repo.js";
 import { detectLink } from "../moderation/antilink.js";
 import { isFlood } from "../moderation/antiflood.js";
 import { containsBlacklisted } from "../moderation/blacklist.js";
@@ -8,7 +8,7 @@ import { detectMediaType, MEDIA_LABEL } from "../moderation/media.js";
 import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
-import { stats } from "../dashboard/state.js";
+import { stats, pushDebug, setLastContext } from "../dashboard/state.js";
 import { tryAnswer, hasActiveGame } from "../games/engine.js";
 import { buildAiContext } from "../memory/context.js";
 import { extractAndStore } from "../memory/extractor.js";
@@ -21,11 +21,17 @@ import {
   hasSession,
   openSession,
   closeSession,
+  touchSession,
 } from "../sessions/index.js";
 import { sendChunked } from "../utils/chunk.js";
 import { recentMessages } from "../db/repo.js";
+import { alreadyProcessed } from "../utils/dedupe.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
+
+function debug(entry) {
+  if (config.debugConversation) pushDebug(entry);
+}
 
 async function tryDelete(sock, groupJid, msg, reason = "") {
   if (!config.moderation.deleteBlocked) return false;
@@ -47,8 +53,11 @@ async function tryDelete(sock, groupJid, msg, reason = "") {
   }
 }
 
-async function sendReply(sock, jid, text, msg) {
-  return sendChunked(sock, jid, text, { quoted: msg });
+async function sendReply(sock, jid, text, msg, botJid) {
+  const n = await sendChunked(sock, jid, text, { quoted: msg });
+  // Persister la réponse d'Ayumi pour qu'elle apparaisse dans l'historique
+  saveBotMessage(botJid, jid, text);
+  return n;
 }
 
 export async function handleMessage(ctx) {
@@ -57,11 +66,32 @@ export async function handleMessage(ctx) {
   if (!groupJid) return;
   if (config.groupJid && groupJid !== config.groupJid) return;
 
+  // Dédup
+  if (alreadyProcessed(msg.key.id)) {
+    stats.duplicatesSkipped += 1;
+    debug({
+      msgId: msg.key.id,
+      userJid,
+      groupJid,
+      decision: "IGNORED",
+      reason: "dedupe",
+    });
+    return;
+  }
+
   trackUser(userJid, pushName);
   saveMessage(userJid, groupJid, text || "");
   stats.messagesSeen += 1;
 
-  // --- Médias (stickers TOUJOURS autorisés) ---
+  const baseDbg = {
+    msgId: msg.key.id,
+    userJid,
+    pushName,
+    groupJid,
+    text: (text || "").slice(0, 200),
+  };
+
+  // --- Médias ---
   const media = detectMediaType(msg);
   if (media && media !== "sticker" && config.moderation.blockMedia) {
     const { total } = warnUser(userJid, `média: ${media}`);
@@ -70,12 +100,15 @@ export async function handleMessage(ctx) {
     await sock.sendMessage(groupJid, {
       text: `🚫 Pas de ${MEDIA_LABEL[media] || media} ici, ${pushName || "toi"}. Warn ${total}.`,
     });
+    debug({ ...baseDbg, decision: "IGNORED", reason: `moderation:media:${media}` });
     return;
   }
 
-  if (!text) return;
+  if (!text) {
+    debug({ ...baseDbg, decision: "IGNORED", reason: "no-text" });
+    return;
+  }
 
-  // --- Liens ---
   if (config.moderation.blockLinks) {
     const link = detectLink(text);
     if (link) {
@@ -85,11 +118,11 @@ export async function handleMessage(ctx) {
       await sock.sendMessage(groupJid, {
         text: `🚫 Pas de liens ici (${link}). Warn ${total}.`,
       });
+      debug({ ...baseDbg, decision: "IGNORED", reason: "moderation:link" });
       return;
     }
   }
 
-  // --- Blacklist ---
   const bad = containsBlacklisted(text);
   if (bad) {
     const { total } = warnUser(userJid, `mot interdit: ${bad}`);
@@ -98,6 +131,7 @@ export async function handleMessage(ctx) {
     await sock.sendMessage(groupJid, {
       text: `🤐 Langage interdit (${bad}). Warn ${total}.`,
     });
+    debug({ ...baseDbg, decision: "IGNORED", reason: "moderation:blacklist" });
     return;
   }
 
@@ -105,6 +139,7 @@ export async function handleMessage(ctx) {
     await sock.sendMessage(groupJid, {
       text: `🐢 ${pushName || "toi"}, calme le flood.`,
     });
+    debug({ ...baseDbg, decision: "IGNORED", reason: "flood" });
     return;
   }
 
@@ -117,29 +152,29 @@ export async function handleMessage(ctx) {
       const result = await commands[cmd.name]({ ...ctx, args: cmd.args });
       if (result) {
         if (typeof result === "string") {
-          await sendReply(sock, groupJid, result, msg);
+          await sendReply(sock, groupJid, result, msg, botJid);
         } else {
           await sock.sendMessage(groupJid, result);
+          if (typeof result?.text === "string")
+            saveBotMessage(botJid, groupJid, result.text);
         }
       }
     } catch (err) {
-      logger.error(
-        { err: err?.message, stack: err?.stack, cmd: cmd.name },
-        "Command failed",
-      );
+      logger.error({ err: err?.message, cmd: cmd.name }, "Command failed");
       await sock.sendMessage(groupJid, { text: "Erreur sur cette commande." });
     }
+    debug({ ...baseDbg, decision: "COMMAND", reason: cmd.name });
     return;
   }
 
-  // --- Réponse à un jeu en cours ---
+  // --- Jeu en cours ---
   if (hasActiveGame(groupJid)) {
     const r = tryAnswer(groupJid, userJid, pushName, text);
     if (r?.correct) {
-      await sendReply(sock, groupJid, r.text, msg);
+      await sendReply(sock, groupJid, r.text, msg, botJid);
+      debug({ ...baseDbg, decision: "GAME", reason: "correct-answer" });
       return;
     }
-    // sinon on continue normalement
   }
 
   // --- Extraction auto d'infos ---
@@ -156,19 +191,43 @@ export async function handleMessage(ctx) {
     const recent = recentMessages(groupJid, 60)
       .map((m) => `${m.user_jid === botJid ? "Ayumi" : "user"}: ${m.content}`)
       .join("\n");
-    maybeSummarize({ groupJid, recentText: recent }); // fire & forget
+    maybeSummarize({ groupJid, recentText: recent });
   }
 
-  // --- Conditions de déclenchement IA ---
+  // --- Triggers IA ---
   const isMention = ctx.mentioned?.includes(botJid);
   const isReplyToBot = ctx.quotedJid === botJid;
   const looksAddressed = BOT_TRIGGER_RE.test(text);
   const inSession = hasSession(groupJid, userJid);
 
-  if (!(isMention || isReplyToBot || looksAddressed || inSession)) return;
+  let reason = null;
+  if (isMention) reason = "mention";
+  else if (isReplyToBot) reason = "reply";
+  else if (looksAddressed) reason = "trigger";
+  else if (inSession) reason = "session";
 
-  // --- IA avec contexte complet ---
-  const { systemExtras, history } = buildAiContext({ groupJid, userJid, botJid });
+  if (!reason) {
+    debug({ ...baseDbg, decision: "IGNORED", reason: "no-trigger" });
+    return;
+  }
+
+  // --- Contexte ---
+  const { systemExtras, history, sizes } = buildAiContext({
+    groupJid,
+    userJid,
+    botJid,
+  });
+  setLastContext({
+    systemExtras,
+    history,
+    userMessage: text,
+    userJid,
+    groupJid,
+    reason,
+    sizes,
+  });
+
+  const t0 = Date.now();
   const reply = await askAyumi({
     userJid,
     userName: pushName,
@@ -176,18 +235,24 @@ export async function handleMessage(ctx) {
     userMessage: text,
     systemExtras,
   });
+  const latencyMs = Date.now() - t0;
+
   if (reply) {
-    await sendReply(sock, groupJid, reply, msg);
-    // Si Ayumi pose une question → ouvre/prolonge la session
-    if (/\?\s*$/.test(reply.trim())) {
-      openSession(groupJid, userJid, { ayumiAsked: true });
-    } else if (inSession) {
-      // Continue la conversation pour quelques échanges supplémentaires
-      openSession(groupJid, userJid, { ayumiAsked: false });
-    } else {
-      openSession(groupJid, userJid, { ayumiAsked: false });
-    }
+    await sendReply(sock, groupJid, reply, msg, botJid);
+    // session glissante + state
+    const ayumiAsked = /\?\s*$/.test(reply.trim());
+    openSession(groupJid, userJid, { ayumiAsked });
+    touchSession(groupJid, userJid);
+    debug({
+      ...baseDbg,
+      decision: "AI",
+      reason,
+      session: { active: true, ayumiAsked },
+      context: { ...sizes },
+      reply: { chars: reply.length, latencyMs },
+    });
   } else {
     closeSession(groupJid, userJid);
+    debug({ ...baseDbg, decision: "AI", reason, replyError: true });
   }
 }

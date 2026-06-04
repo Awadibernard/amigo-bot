@@ -1,7 +1,7 @@
 import http from "node:http";
 import { config } from "../config.js";
 import { runtime } from "../runtime.js";
-import { stats, getLogs } from "./state.js";
+import { stats, getLogs, getDebug } from "./state.js";
 import { memoryStats, topPlayers } from "../memory/index.js";
 import { activeGame, activeGamesCount } from "../games/engine.js";
 import { activeSessions } from "../sessions/index.js";
