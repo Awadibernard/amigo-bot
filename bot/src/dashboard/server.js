@@ -39,6 +39,11 @@ ul{margin:4px 0;padding-left:18px}li{margin:2px 0;font-size:12px;color:#c9d1d9}
 <h2>Modération &amp; admin</h2><div class="grid" id="mod"></div>
 <div><button id="btnAdmin">Toggle admin enforcement</button> <span id="adminState"></span></div>
 <h2>Erreurs IA récentes</h2><div id="errs"></div>
+<h2>Debug conversation 🐞</h2>
+<div class="grid" id="dbg"></div>
+<div><button id="btnCtx">Voir dernier prompt envoyé</button></div>
+<pre id="ctxBox" style="display:none;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px;max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;margin-top:8px"></pre>
+<div id="dbgList" style="margin-top:8px"></div>
 <h2>Logs live</h2><div id="logs"></div>
 
 <script>
