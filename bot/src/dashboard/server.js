@@ -198,6 +198,7 @@ export function startDashboard() {
           testMode: config.testMode,
           adminEnforce: runtime.adminEnforce,
           conversationalMode: config.conversationalMode,
+          debugConversation: config.debugConversation,
           blockLinks: config.moderation.blockLinks,
           blockMedia: config.moderation.blockMedia,
           deleteBlocked: config.moderation.deleteBlocked,
@@ -207,6 +208,7 @@ export function startDashboard() {
           sessions: activeSessions().map((s) => ({
             userJid: s.userJid,
             ayumiAsked: s.ayumiAsked,
+            expiresInMs: s.expiresInMs,
           })),
           games: {
             active: activeGamesCount(),
@@ -225,6 +227,18 @@ export function startDashboard() {
     if (req.url === "/api/logs") {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(getLogs().slice(-200)));
+    }
+    if (req.url === "/api/debug/conversation") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(getDebug()));
+    }
+    if (req.url === "/api/debug/last-context") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(stats.lastContext || {}));
+    }
+    if (req.url === "/api/debug/sessions") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(activeSessions()));
     }
     if (req.url === "/api/toggle-admin" && req.method === "POST") {
       runtime.adminEnforce = !runtime.adminEnforce;
