@@ -121,6 +121,20 @@ async function tick(){
     document.getElementById('errs').innerHTML = (s.recentAiErrors||[]).length
       ? '<ul>'+(s.recentAiErrors).slice().reverse().map(e=>'<li>['+new Date(e.ts).toISOString().slice(11,19)+'] '+e.status+' — '+(e.body||'').slice(0,200)+'</li>').join('')+'</ul>'
       : '<div style="color:#7ee787">aucune erreur récente</div>';
+    const lastD = s.lastDecision;
+    const lastC = s.lastContext;
+    document.getElementById('dbg').innerHTML = [
+      card('DEBUG_CONVERSATION', s.debugConversation ? '<span class=ok>ON</span>' : '<span class=warn>OFF</span>'),
+      card('Dernière décision', lastD ? lastD.decision+' — '+lastD.reason : '—'),
+      card('Dern. contexte (mem/facts/sum/hist/prompt)', lastC ? (lastC.sizes.userMemChars+'/'+lastC.sizes.factsChars+'/'+lastC.sizes.summaryChars+'/'+lastC.sizes.historyMsgs+'/'+lastC.sizes.promptChars) : '—'),
+      card('Doublons ignorés', s.duplicatesSkipped||0),
+    ].join('');
+    try {
+      const d = await fetch('/api/debug/conversation').then(r=>r.json());
+      document.getElementById('dbgList').innerHTML = d.length
+        ? '<ul>'+d.slice().reverse().slice(0,20).map(x=>'<li>['+new Date(x.ts).toISOString().slice(11,19)+'] '+(x.pushName||x.userJid?.split('@')[0]||'?')+' → <b>'+x.decision+'</b> ('+x.reason+')'+(x.text?' — '+x.text.slice(0,80):'')+'</li>').join('')+'</ul>'
+        : '<div style="color:#8b949e">aucune décision capturée (active DEBUG_CONVERSATION=true)</div>';
+    } catch(e){}
     const box = document.getElementById('logs');
     box.innerHTML = l.map(x=>{
       const time = new Date(x.t).toISOString().slice(11,19);
@@ -132,6 +146,14 @@ async function tick(){
 }
 document.getElementById('btnAdmin').onclick = async ()=>{
   await fetch('/api/toggle-admin',{method:'POST'}); tick();
+};
+document.getElementById('btnCtx').onclick = async ()=>{
+  const box = document.getElementById('ctxBox');
+  if (box.style.display === 'block') { box.style.display='none'; return; }
+  const c = await fetch('/api/debug/last-context').then(r=>r.json());
+  box.style.display='block';
+  if (!c || !c.systemExtras && !c.history) { box.textContent = 'Aucun contexte capturé.'; return; }
+  box.textContent = '=== SYSTEM EXTRAS ===\\n'+(c.systemExtras||'(vide)')+'\\n\\n=== HISTORY ('+(c.history?.length||0)+') ===\\n'+(c.history||[]).map(h=>'['+h.role+'] '+h.content).join('\\n')+'\\n\\n=== USER MESSAGE ===\\n'+(c.userMessage||'');
 };
 tick();setInterval(tick,2000);
 </script></body></html>`;
