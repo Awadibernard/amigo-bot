@@ -41,7 +41,12 @@ ul{margin:4px 0;padding-left:18px}li{margin:2px 0;font-size:12px;color:#c9d1d9}
 <h2>Erreurs IA récentes</h2><div id="errs"></div>
 <h2>Debug conversation 🐞</h2>
 <div class="grid" id="dbg"></div>
-<div><button id="btnCtx">Voir dernier prompt envoyé</button></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+  <input id="dbgSearch" placeholder="Rechercher (décision, raison, texte, nom)" style="flex:1;min-width:220px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-family:inherit;font-size:12px"/>
+  <input id="dbgLimit" type="number" min="10" max="500" value="50" style="width:80px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-family:inherit;font-size:12px"/>
+  <button id="btnCtx">Dernier prompt</button>
+  <button id="btnExport">Export JSON</button>
+</div>
 <pre id="ctxBox" style="display:none;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px;max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;margin-top:8px"></pre>
 <div id="dbgList" style="margin-top:8px"></div>
 <h2>Logs live</h2><div id="logs"></div>
