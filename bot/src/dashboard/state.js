@@ -55,7 +55,8 @@ export function getLogs() {
 }
 
 // ===== Ring buffer DEBUG_CONVERSATION =====
-const MAX_DEBUG = 100;
+import { config } from "../config.js";
+const MAX_DEBUG = config.ai?.debugBufferSize || 300;
 const debugBuf = [];
 
 export function pushDebug(entry) {
