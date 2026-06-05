@@ -1,5 +1,6 @@
 // Banques de questions étendues pour les jeux Ayumi.
-// Format : { q, a:[réponses normalisées acceptées] }
+// Format quiz : { q, a:[réponses normalisées acceptées] }
+// Format social : juste des strings (pas de bonne réponse).
 
 export const QUIZ = [
   { q: "Quelle est la capitale de l'Australie ?", a: ["canberra"] },
@@ -68,24 +69,97 @@ export const QUI_SUIS_JE = [
 ];
 
 export const BLINDTEXT = [
-  { q: "« Je veux voir le manager. »", a: ["wesh alors", "kev adams", "florence foresti", "blague carambar"], hint: "Réplique virale, FR" },
   { q: "« Houston, we have a problem. »", a: ["apollo 13"] },
   { q: "« May the Force be with you. »", a: ["star wars", "starwars"] },
   { q: "« Je suis ton père. »", a: ["star wars", "dark vador", "vador"] },
   { q: "« Hakuna matata. »", a: ["le roi lion", "roi lion", "lion king"] },
 ];
 
-export const ACTION_VERITE = [
-  "Vérité : ton plus gros mensonge à un prof ?",
-  "Action : envoie le dernier emoji que tu as utilisé, sans contexte.",
-  "Vérité : qui dans ce groupe te fait le plus rire ?",
-  "Action : raconte ta pire honte en une phrase.",
-  "Vérité : si tu pouvais effacer un souvenir, lequel ?",
-  "Action : écris un message d'amour ridicule en moins de 10 mots.",
-  "Vérité : dernière fois que t'as pleuré ?",
-  "Action : décris ta journée en 3 emojis.",
+// ===== JEUX SOCIAUX (pas de bonne réponse, on enchaîne avec /next) =====
+
+export const ACTION_QUESTIONS = [
+  "Envoie le dernier emoji que tu as utilisé, sans contexte.",
+  "Raconte ta pire honte de la semaine, en une phrase.",
+  "Écris un message d'amour ridicule en moins de 10 mots.",
+  "Décris ta journée en 3 emojis.",
+  "Imite un perso du groupe en une phrase.",
+  "Envoie une capture random de ta galerie (description si pas possible).",
+  "Invente un slogan ridicule pour ce groupe.",
+  "Écris ton autobiographie en 1 phrase.",
 ];
 
+export const VERITE_QUESTIONS = [
+  "Ton plus gros mensonge à un prof ?",
+  "Qui dans ce groupe te fait le plus rire ?",
+  "Si tu pouvais effacer un souvenir, lequel ?",
+  "Dernière fois que t'as pleuré ?",
+  "Ton pire date ?",
+  "Une chose que personne ne sait sur toi ?",
+  "Si t'étais invisible 24h, tu fais quoi ?",
+  "Crush actuel : oui ou non ?",
+];
+
+export const JE_N_AI_JAMAIS = [
+  "Je n'ai jamais menti à mes parents pour sortir.",
+  "Je n'ai jamais embrassé quelqu'un en cachette.",
+  "Je n'ai jamais séché un cours.",
+  "Je n'ai jamais pleuré devant un film Disney.",
+  "Je n'ai jamais envoyé un message d'amour au mauvais destinataire.",
+  "Je n'ai jamais fait semblant d'aimer un cadeau.",
+  "Je n'ai jamais stalké quelqu'un sur Insta plus de 1h.",
+  "Je n'ai jamais cru au Père Noël après 10 ans.",
+];
+
+export const PREFERES_TU = [
+  "Préfères-tu : ne plus jamais avoir internet, OU ne plus jamais sortir de chez toi ?",
+  "Préfères-tu : être célèbre mais pauvre, OU riche mais inconnu ?",
+  "Préfères-tu : parler toutes les langues, OU savoir jouer de tous les instruments ?",
+  "Préfères-tu : être en retard partout, OU 1h en avance partout ?",
+  "Préfères-tu : un été éternel, OU un hiver éternel ?",
+  "Préfères-tu : lire les pensées des autres, OU être invisible ?",
+  "Préfères-tu : pizza tous les jours, OU sushis tous les jours ?",
+];
+
+export const QUI_EST_LE_PLUS_SUSCEPTIBLE = [
+  "Qui est le plus susceptible de devenir célèbre ?",
+  "Qui est le plus susceptible de pleurer devant un film ?",
+  "Qui est le plus susceptible de répondre à 4h du mat ?",
+  "Qui est le plus susceptible de faire un truc complètement con sur un pari ?",
+  "Qui est le plus susceptible d'oublier l'anniversaire d'un pote ?",
+  "Qui est le plus susceptible de partir vivre à l'étranger ?",
+  "Qui est le plus susceptible de gagner au loto et tout dépenser en 1 mois ?",
+];
+
+export const DEFIS_DU_JOUR = [
+  "Envoie un message vocal de 5 sec en chantant ton refrain préféré.",
+  "Décris ton humeur du jour avec une météo bizarre.",
+  "Raconte la chose la plus stupide que tu as faite cette semaine.",
+  "Partage la dernière photo de ta galerie (description si trop perso).",
+  "Invente une excuse pour rater l'école/le boulot demain.",
+  "Compose un haiku sur le groupe.",
+];
+
+export const QUESTIONS_RAPIDES = [
+  "Plage ou montagne ?",
+  "Chien ou chat ?",
+  "Film ou série ?",
+  "Salé ou sucré ?",
+  "Matin ou soir ?",
+  "Tatouage ou piercing ?",
+  "Manga ou comics ?",
+  "Café ou thé ?",
+];
+
+export const DEBATS = [
+  "L'ananas sur la pizza : crime ou génie ?",
+  "Est-ce qu'on devrait noter ses amis comme sur Uber ?",
+  "Le ghosting : parfois OK, ou jamais OK ?",
+  "Est-ce qu'on peut être amis avec son/sa ex ?",
+  "Faut-il interdire les réseaux sociaux aux -16 ?",
+  "Vacances en groupe : super idée ou catastrophe assurée ?",
+];
+
+// Conservés pour rétrocompat (utilisés par roleplay)
 export const ROLEPLAY_SCENES = [
   "Tu es un détective qui interroge un suspect. Pose ta première question.",
   "Tu es un client mécontent dans un resto étoilé. Vas-y.",
@@ -93,3 +167,6 @@ export const ROLEPLAY_SCENES = [
   "Tu es un coach sportif qui motive avant un match. Lance ton discours.",
   "Tu es un guide touristique pour une ville qui n'existe pas. Présente-la.",
 ];
+
+// Ancien alias (rétro-compat)
+export const ACTION_VERITE = [...ACTION_QUESTIONS, ...VERITE_QUESTIONS];
