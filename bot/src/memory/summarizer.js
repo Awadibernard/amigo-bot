@@ -20,7 +20,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_summaries_group ON summaries(group_jid, ts DESC);
 `);
 
-const SUMMARIZE_EVERY = 50;
+const SUMMARIZE_EVERY = config.ai.summarizeEvery || 50;
 
 const insertSummary = db.prepare(
   `INSERT INTO summaries (group_jid, text, covers_until, ts) VALUES (?, ?, ?, ?)`,

@@ -9,7 +9,7 @@ import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
 import { stats, pushDebug, setLastContext } from "../dashboard/state.js";
-import { tryAnswer, hasActiveGame } from "../games/engine.js";
+import { tryAnswer, hasActiveGame, handleSocialMessage, isSocialGame } from "../games/engine.js";
 import { buildAiContext } from "../memory/context.js";
 import { extractAndStore } from "../memory/extractor.js";
 import {
@@ -169,11 +169,20 @@ export async function handleMessage(ctx) {
 
   // --- Jeu en cours ---
   if (hasActiveGame(groupJid)) {
-    const r = tryAnswer(groupJid, userJid, pushName, text);
-    if (r?.correct) {
-      await sendReply(sock, groupJid, r.text, msg, botJid);
-      debug({ ...baseDbg, decision: "GAME", reason: "correct-answer" });
-      return;
+    if (isSocialGame(groupJid)) {
+      const r = handleSocialMessage(groupJid, userJid, pushName, text);
+      if (r?.text) {
+        await sendReply(sock, groupJid, r.text, msg, botJid);
+        debug({ ...baseDbg, decision: "GAME", reason: "social-turn" });
+        return;
+      }
+    } else {
+      const r = tryAnswer(groupJid, userJid, pushName, text);
+      if (r?.correct) {
+        await sendReply(sock, groupJid, r.text, msg, botJid);
+        debug({ ...baseDbg, decision: "GAME", reason: "correct-answer" });
+        return;
+      }
     }
   }
 

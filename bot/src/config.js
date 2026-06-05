@@ -53,6 +53,9 @@ export const config = {
     maxPerDay: num(process.env.AI_MAX_PER_DAY, 400),
     historyLength: num(process.env.AI_HISTORY_LENGTH, 12),
     maxTokens: num(process.env.AI_MAX_TOKENS, 2048),
+    memFactsLimit: num(process.env.AI_MEM_FACTS_LIMIT, 5),
+    summarizeEvery: num(process.env.AI_SUMMARIZE_EVERY, 50),
+    debugBufferSize: num(process.env.DEBUG_BUFFER_SIZE, 300),
   },
   silenceMinutes: num(process.env.SILENCE_MINUTES, 240),
 

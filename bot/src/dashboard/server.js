@@ -41,7 +41,12 @@ ul{margin:4px 0;padding-left:18px}li{margin:2px 0;font-size:12px;color:#c9d1d9}
 <h2>Erreurs IA récentes</h2><div id="errs"></div>
 <h2>Debug conversation 🐞</h2>
 <div class="grid" id="dbg"></div>
-<div><button id="btnCtx">Voir dernier prompt envoyé</button></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+  <input id="dbgSearch" placeholder="Rechercher (décision, raison, texte, nom)" style="flex:1;min-width:220px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-family:inherit;font-size:12px"/>
+  <input id="dbgLimit" type="number" min="10" max="500" value="50" style="width:80px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-family:inherit;font-size:12px"/>
+  <button id="btnCtx">Dernier prompt</button>
+  <button id="btnExport">Export JSON</button>
+</div>
 <pre id="ctxBox" style="display:none;background:#010409;border:1px solid #30363d;border-radius:8px;padding:12px;max-height:40vh;overflow:auto;font-size:11px;white-space:pre-wrap;margin-top:8px"></pre>
 <div id="dbgList" style="margin-top:8px"></div>
 <h2>Logs live</h2><div id="logs"></div>
@@ -130,9 +135,12 @@ async function tick(){
       card('Doublons ignorés', s.duplicatesSkipped||0),
     ].join('');
     try {
-      const d = await fetch('/api/debug/conversation').then(r=>r.json());
-      document.getElementById('dbgList').innerHTML = d.length
-        ? '<ul>'+d.slice().reverse().slice(0,20).map(x=>'<li>['+new Date(x.ts).toISOString().slice(11,19)+'] '+(x.pushName||x.userJid?.split('@')[0]||'?')+' → <b>'+x.decision+'</b> ('+x.reason+')'+(x.text?' — '+x.text.slice(0,80):'')+'</li>').join('')+'</ul>'
+      const q = encodeURIComponent(document.getElementById('dbgSearch').value || '');
+      const lim = parseInt(document.getElementById('dbgLimit').value||'50',10);
+      const d = await fetch('/api/debug/conversation?q='+q+'&limit='+lim).then(r=>r.json());
+      const items = d.items || [];
+      document.getElementById('dbgList').innerHTML = items.length
+        ? '<div style="color:#8b949e;font-size:11px;margin-bottom:4px">'+items.length+' / '+d.total+' entrées</div><ul>'+items.map(x=>'<li>['+new Date(x.ts).toISOString().slice(11,19)+'] '+(x.pushName||x.userJid?.split('@')[0]||'?')+' → <b>'+x.decision+'</b> ('+x.reason+')'+(x.text?' — '+x.text.slice(0,80):'')+'</li>').join('')+'</ul>'
         : '<div style="color:#8b949e">aucune décision capturée (active DEBUG_CONVERSATION=true)</div>';
     } catch(e){}
     const box = document.getElementById('logs');
@@ -155,6 +163,9 @@ document.getElementById('btnCtx').onclick = async ()=>{
   if (!c || !c.systemExtras && !c.history) { box.textContent = 'Aucun contexte capturé.'; return; }
   box.textContent = '=== SYSTEM EXTRAS ===\\n'+(c.systemExtras||'(vide)')+'\\n\\n=== HISTORY ('+(c.history?.length||0)+') ===\\n'+(c.history||[]).map(h=>'['+h.role+'] '+h.content).join('\\n')+'\\n\\n=== USER MESSAGE ===\\n'+(c.userMessage||'');
 };
+document.getElementById('btnExport').onclick = ()=>{ window.location='/api/debug/export'; };
+document.getElementById('dbgSearch').addEventListener('input', ()=>tick());
+document.getElementById('dbgLimit').addEventListener('change', ()=>tick());
 tick();setInterval(tick,2000);
 </script></body></html>`;
 }
@@ -228,9 +239,37 @@ export function startDashboard() {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(getLogs().slice(-200)));
     }
-    if (req.url === "/api/debug/conversation") {
+    if (req.url.startsWith("/api/debug/conversation")) {
+      const u = new URL(req.url, "http://x");
+      const q = (u.searchParams.get("q") || "").toLowerCase();
+      const limit = Math.min(parseInt(u.searchParams.get("limit") || "50", 10), 500);
+      const offset = parseInt(u.searchParams.get("offset") || "0", 10);
+      let buf = getDebug().slice().reverse();
+      if (q) {
+        buf = buf.filter(
+          (x) =>
+            (x.decision || "").toLowerCase().includes(q) ||
+            (x.reason || "").toLowerCase().includes(q) ||
+            (x.text || "").toLowerCase().includes(q) ||
+            (x.pushName || "").toLowerCase().includes(q),
+        );
+      }
+      const page = buf.slice(offset, offset + limit);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(getDebug()));
+      return res.end(JSON.stringify({ total: buf.length, items: page }));
+    }
+    if (req.url === "/api/debug/export") {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename=ayumi-debug-${Date.now()}.json`,
+      });
+      return res.end(
+        JSON.stringify(
+          { exportedAt: Date.now(), conversation: getDebug(), lastContext: stats.lastContext },
+          null,
+          2,
+        ),
+      );
     }
     if (req.url === "/api/debug/last-context") {
       res.writeHead(200, { "Content-Type": "application/json" });
