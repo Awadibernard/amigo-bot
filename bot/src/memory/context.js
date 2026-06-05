@@ -10,7 +10,7 @@ import { config } from "../config.js";
 
 export function buildAiContext({ groupJid, userJid, botJid }) {
   const userMem = getUserContext(userJid);
-  const facts = listFacts(groupJid || "group", 5)
+  const facts = listFacts(groupJid || "group", config.ai.memFactsLimit || 5)
     .map((f) => `- ${f.text}`)
     .join("\n");
   const summary = latestSummary(groupJid);
