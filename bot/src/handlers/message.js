@@ -169,11 +169,20 @@ export async function handleMessage(ctx) {
 
   // --- Jeu en cours ---
   if (hasActiveGame(groupJid)) {
-    const r = tryAnswer(groupJid, userJid, pushName, text);
-    if (r?.correct) {
-      await sendReply(sock, groupJid, r.text, msg, botJid);
-      debug({ ...baseDbg, decision: "GAME", reason: "correct-answer" });
-      return;
+    if (isSocialGame(groupJid)) {
+      const r = handleSocialMessage(groupJid, userJid, pushName, text);
+      if (r?.text) {
+        await sendReply(sock, groupJid, r.text, msg, botJid);
+        debug({ ...baseDbg, decision: "GAME", reason: "social-turn" });
+        return;
+      }
+    } else {
+      const r = tryAnswer(groupJid, userJid, pushName, text);
+      if (r?.correct) {
+        await sendReply(sock, groupJid, r.text, msg, botJid);
+        debug({ ...baseDbg, decision: "GAME", reason: "correct-answer" });
+        return;
+      }
     }
   }
 
