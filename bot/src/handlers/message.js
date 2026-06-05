@@ -9,7 +9,7 @@ import { warnUser } from "../moderation/warnings.js";
 import { commands, parseCommand } from "../commands/index.js";
 import { askAyumi } from "../ai/gemini.js";
 import { stats, pushDebug, setLastContext } from "../dashboard/state.js";
-import { tryAnswer, hasActiveGame } from "../games/engine.js";
+import { tryAnswer, hasActiveGame, handleSocialMessage, isSocialGame } from "../games/engine.js";
 import { buildAiContext } from "../memory/context.js";
 import { extractAndStore } from "../memory/extractor.js";
 import {
