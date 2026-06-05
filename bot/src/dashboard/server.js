@@ -228,9 +228,37 @@ export function startDashboard() {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(getLogs().slice(-200)));
     }
-    if (req.url === "/api/debug/conversation") {
+    if (req.url.startsWith("/api/debug/conversation")) {
+      const u = new URL(req.url, "http://x");
+      const q = (u.searchParams.get("q") || "").toLowerCase();
+      const limit = Math.min(parseInt(u.searchParams.get("limit") || "50", 10), 500);
+      const offset = parseInt(u.searchParams.get("offset") || "0", 10);
+      let buf = getDebug().slice().reverse();
+      if (q) {
+        buf = buf.filter(
+          (x) =>
+            (x.decision || "").toLowerCase().includes(q) ||
+            (x.reason || "").toLowerCase().includes(q) ||
+            (x.text || "").toLowerCase().includes(q) ||
+            (x.pushName || "").toLowerCase().includes(q),
+        );
+      }
+      const page = buf.slice(offset, offset + limit);
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(getDebug()));
+      return res.end(JSON.stringify({ total: buf.length, items: page }));
+    }
+    if (req.url === "/api/debug/export") {
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename=ayumi-debug-${Date.now()}.json`,
+      });
+      return res.end(
+        JSON.stringify(
+          { exportedAt: Date.now(), conversation: getDebug(), lastContext: stats.lastContext },
+          null,
+          2,
+        ),
+      );
     }
     if (req.url === "/api/debug/last-context") {
       res.writeHead(200, { "Content-Type": "application/json" });
