@@ -163,6 +163,9 @@ document.getElementById('btnCtx').onclick = async ()=>{
   if (!c || !c.systemExtras && !c.history) { box.textContent = 'Aucun contexte capturé.'; return; }
   box.textContent = '=== SYSTEM EXTRAS ===\\n'+(c.systemExtras||'(vide)')+'\\n\\n=== HISTORY ('+(c.history?.length||0)+') ===\\n'+(c.history||[]).map(h=>'['+h.role+'] '+h.content).join('\\n')+'\\n\\n=== USER MESSAGE ===\\n'+(c.userMessage||'');
 };
+document.getElementById('btnExport').onclick = ()=>{ window.location='/api/debug/export'; };
+document.getElementById('dbgSearch').addEventListener('input', ()=>tick());
+document.getElementById('dbgLimit').addEventListener('change', ()=>tick());
 tick();setInterval(tick,2000);
 </script></body></html>`;
 }
