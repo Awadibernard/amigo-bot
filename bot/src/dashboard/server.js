@@ -135,9 +135,12 @@ async function tick(){
       card('Doublons ignorés', s.duplicatesSkipped||0),
     ].join('');
     try {
-      const d = await fetch('/api/debug/conversation').then(r=>r.json());
-      document.getElementById('dbgList').innerHTML = d.length
-        ? '<ul>'+d.slice().reverse().slice(0,20).map(x=>'<li>['+new Date(x.ts).toISOString().slice(11,19)+'] '+(x.pushName||x.userJid?.split('@')[0]||'?')+' → <b>'+x.decision+'</b> ('+x.reason+')'+(x.text?' — '+x.text.slice(0,80):'')+'</li>').join('')+'</ul>'
+      const q = encodeURIComponent(document.getElementById('dbgSearch').value || '');
+      const lim = parseInt(document.getElementById('dbgLimit').value||'50',10);
+      const d = await fetch('/api/debug/conversation?q='+q+'&limit='+lim).then(r=>r.json());
+      const items = d.items || [];
+      document.getElementById('dbgList').innerHTML = items.length
+        ? '<div style="color:#8b949e;font-size:11px;margin-bottom:4px">'+items.length+' / '+d.total+' entrées</div><ul>'+items.map(x=>'<li>['+new Date(x.ts).toISOString().slice(11,19)+'] '+(x.pushName||x.userJid?.split('@')[0]||'?')+' → <b>'+x.decision+'</b> ('+x.reason+')'+(x.text?' — '+x.text.slice(0,80):'')+'</li>').join('')+'</ul>'
         : '<div style="color:#8b949e">aucune décision capturée (active DEBUG_CONVERSATION=true)</div>';
     } catch(e){}
     const box = document.getElementById('logs');
