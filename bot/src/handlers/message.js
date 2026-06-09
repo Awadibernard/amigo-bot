@@ -30,7 +30,7 @@ import { recordMessage } from "../addressing/threads.js";
 import { resolveAddressee } from "../addressing/resolver.js";
 import { moderateSticker } from "../moderation/stickers.js";
 
-const BOT_TRIGGER_RE = /\bayumi\b/i;
+
 
 function debug(entry) {
   if (config.debugConversation) pushDebug(entry);
