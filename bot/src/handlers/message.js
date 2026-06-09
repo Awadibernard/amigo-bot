@@ -26,6 +26,9 @@ import {
 import { sendChunked } from "../utils/chunk.js";
 import { recentMessages } from "../db/repo.js";
 import { alreadyProcessed } from "../utils/dedupe.js";
+import { recordMessage } from "../addressing/threads.js";
+import { resolveAddressee } from "../addressing/resolver.js";
+import { moderateSticker } from "../moderation/stickers.js";
 
 const BOT_TRIGGER_RE = /\bayumi\b/i;
 
