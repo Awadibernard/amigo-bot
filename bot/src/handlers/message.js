@@ -94,8 +94,28 @@ export async function handleMessage(ctx) {
     text: (text || "").slice(0, 200),
   };
 
-  // --- Médias ---
+  // --- Stickers : pipeline indépendant AVANT addressing ---
   const media = detectMediaType(msg);
+  if (media === "sticker" && config.stickers?.moderation) {
+    try {
+      // Téléchargement non implémenté ici (dépend de Baileys downloadMediaMessage).
+      // On invoque le pipeline avec null si pas de buffer ; classify renvoie skipped.
+      const buf = ctx.stickerBuffer || null;
+      const decision = await moderateSticker(ctx, buf);
+      if (decision.action === "delete") {
+        await tryDelete(sock, groupJid, msg, `sticker:${decision.reason}`);
+        const { total } = warnUser(userJid, `sticker:${decision.reason}`);
+        stats.warnsIssued += 1;
+        await sock.sendMessage(groupJid, {
+          text: `🚫 Sticker bloqué (${decision.reason}). Warn ${total}.`,
+        });
+        debug({ ...baseDbg, decision: "IGNORED", reason: `sticker:${decision.reason}` });
+        return;
+      }
+    } catch (err) {
+      logger.warn({ err: err?.message }, "sticker moderation failed");
+    }
+  }
   if (media && media !== "sticker" && config.moderation.blockMedia) {
     const { total } = warnUser(userJid, `média: ${media}`);
     stats.warnsIssued += 1;
@@ -105,6 +125,17 @@ export async function handleMessage(ctx) {
     });
     debug({ ...baseDbg, decision: "IGNORED", reason: `moderation:media:${media}` });
     return;
+  }
+
+  // Enregistrement du fil conversationnel (avant tout calcul d'adressage)
+  if (text) {
+    recordMessage(groupJid, {
+      userJid,
+      text,
+      mentions: ctx.mentioned || [],
+      quotedJid: ctx.quotedJid,
+      fromBot: false,
+    });
   }
 
   if (!text) {
