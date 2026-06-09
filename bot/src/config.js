@@ -72,5 +72,17 @@ export const config = {
     maxDebateAutoPerWeek: num(process.env.MAX_DEBAT_AUTO_PER_WEEK, 1),
   },
   // ancien alias conservé pour rétro-compat
-  games: { autoFridayQuiz: bool(process.env.QUIZ_AUTO, true) },
+  games: {
+    autoFridayQuiz: bool(process.env.QUIZ_AUTO, true),
+    adultMode: bool(process.env.GAMES_ADULT_MODE, false),
+  },
+  stickers: {
+    moderation: bool(process.env.STICKER_MODERATION, false),
+    nsfwThreshold: parseFloat(process.env.STICKER_NSFW_THRESHOLD || "0.8"),
+    violenceThreshold: parseFloat(process.env.STICKER_VIOLENCE_THRESHOLD || "0.8"),
+  },
+  addressing: {
+    aiArbitration: bool(process.env.ADDRESSING_AI_ARBITRATION, false),
+    confidenceThreshold: parseFloat(process.env.ADDRESSING_CONFIDENCE_THRESHOLD || "0.7"),
+  },
 };
