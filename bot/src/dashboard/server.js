@@ -281,6 +281,35 @@ export function startDashboard() {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(activeSessions()));
     }
+    if (req.url === "/api/threads") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(debugThreads()));
+    }
+    if (req.url === "/api/games/active") {
+      const out = [];
+      for (const jid of [config.groupJid].filter(Boolean)) {
+        const g = activeGame(jid);
+        if (g) {
+          out.push({
+            groupJid: jid,
+            name: g.name,
+            type: g.type,
+            round: g.round,
+            social: !!g.mod.social,
+            level: g.level || null,
+            awaiting: g.awaiting || null,
+            awaitingPlayer: awaitingPlayer(jid),
+            players: [...g.players.values()].map((p) => ({ jid: p.jid, name: p.name })),
+          });
+        }
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(out));
+    }
+    if (req.url === "/api/stickers/log") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(recentStickerLog()));
+    }
     if (req.url === "/api/toggle-admin" && req.method === "POST") {
       runtime.adminEnforce = !runtime.adminEnforce;
       res.writeHead(200, { "Content-Type": "application/json" });
