@@ -237,22 +237,26 @@ export async function handleMessage(ctx) {
     maybeSummarize({ groupJid, recentText: recent });
   }
 
-  // --- Triggers IA ---
-  const isMention = ctx.mentioned?.includes(botJid);
-  const isReplyToBot = ctx.quotedJid === botJid;
-  const looksAddressed = BOT_TRIGGER_RE.test(text);
-  const inSession = hasSession(groupJid, userJid);
-
-  let reason = null;
-  if (isMention) reason = "mention";
-  else if (isReplyToBot) reason = "reply";
-  else if (looksAddressed) reason = "trigger";
-  else if (inSession) reason = "session";
-
-  if (!reason) {
-    debug({ ...baseDbg, decision: "IGNORED", reason: "no-trigger" });
+  // --- Décision d'adressage (Resolver) ---
+  const decision = resolveAddressee({
+    text,
+    userJid,
+    groupJid,
+    botJid,
+    mentioned: ctx.mentioned,
+    quotedJid: ctx.quotedJid,
+    isCommand: false,
+  });
+  if (decision.target !== "ayumi") {
+    debug({
+      ...baseDbg,
+      decision: "IGNORED",
+      reason: `addressing:${decision.target}:${decision.reason}`,
+      confidence: decision.confidence,
+    });
     return;
   }
+  const reason = decision.reason;
 
   // --- Contexte ---
   const { systemExtras, history, sizes } = buildAiContext({
