@@ -3,10 +3,12 @@ import { config } from "../config.js";
 import { runtime } from "../runtime.js";
 import { stats, getLogs, getDebug } from "./state.js";
 import { memoryStats, topPlayers } from "../memory/index.js";
-import { activeGame, activeGamesCount } from "../games/engine.js";
+import { activeGame, activeGamesCount, awaitingPlayer } from "../games/engine.js";
 import { activeSessions } from "../sessions/index.js";
 import { summariesCount } from "../memory/summarizer.js";
 import { listCustomGames } from "../games/registry.js";
+import { debugThreads } from "../addressing/threads.js";
+import { recentStickerLog } from "../moderation/stickers.js";
 
 function html() {
   return `<!doctype html><html lang="fr"><head>
