@@ -60,6 +60,8 @@ async function sendReply(sock, jid, text, msg, botJid) {
   const n = await sendChunked(sock, jid, text, { quoted: msg });
   // Persister la réponse d'Ayumi pour qu'elle apparaisse dans l'historique
   saveBotMessage(botJid, jid, text);
+  // Enregistrer dans le fil pour le resolver
+  recordMessage(jid, { userJid: botJid, text, fromBot: true, mentions: [], quotedJid: null });
   return n;
 }
 
