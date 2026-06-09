@@ -74,7 +74,7 @@ export function isSocialGame(groupJid) {
   return !!(s && s.mod && s.mod.social);
 }
 
-export function startGame(groupJid, typeRaw, { totalRounds } = {}) {
+export function startGame(groupJid, typeRaw, opts = {}) {
   if (sessions.has(groupJid)) {
     return { error: "🎮 Une partie est déjà en cours. /stop pour l'arrêter." };
   }
@@ -99,19 +99,35 @@ export function startGame(groupJid, typeRaw, { totalRounds } = {}) {
     kind,
     name: mod.name,
     points: mod.points || 0,
-    totalRounds: totalRounds || mod.totalRounds || 5,
+    totalRounds: opts.totalRounds || mod.totalRounds || 5,
     round: 0,
     players: new Map(),
     used: new Set(),
     history: [],
     current: null,
+    awaiting: null, // { playerJid, kind, since }
     startedAt: Date.now(),
     timer: null,
     lastPlayerJid: null,
     mod,
   };
+  if (typeof mod.init === "function") mod.init(state, opts);
   sessions.set(groupJid, state);
   return { text: openRound(state) };
+}
+
+// Joueur attendu par le jeu en cours, s'il y en a un.
+export function awaitingPlayer(groupJid) {
+  const s = sessions.get(groupJid);
+  return s?.awaiting?.playerJid || null;
+}
+
+// Pour les tests : ferme toutes les sessions.
+export function _resetGamesForTests() {
+  for (const [, s] of sessions) {
+    if (s.timer) clearTimeout(s.timer);
+  }
+  sessions.clear();
 }
 
 function openRound(state) {
