@@ -57,7 +57,9 @@ export async function jeu({ args, groupJid }) {
     return r.error || r.text;
   }
   if (TYPES[sub]) {
-    const r = startGame(groupJid, sub);
+    const opts = {};
+    if (sub === "actionverite" && args[1]) opts.level = args[1];
+    const r = startGame(groupJid, sub, opts);
     return r.error || r.text;
   }
   return `Type inconnu. Essaie : ${listGameTypes().join(", ")}`;
