@@ -67,13 +67,13 @@ function makeCtx(text, { mention = false, reply = false, id = "m" + Math.random(
   };
 }
 
-test("message sans trigger → ignoré (no-trigger)", async () => {
+test("message sans trigger → ignoré (addressing other)", async () => {
   _resetDedupeForTests();
   closeSession(G, U);
   await handleMessage(makeCtx("salut tout le monde"));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "IGNORED");
-  assert.equal(last.reason, "no-trigger");
+  assert.ok((last.reason || "").startsWith("addressing:other"));
 });
 
 test("mention → traité par IA, ouvre session", async () => {
@@ -93,7 +93,7 @@ test("message suivant en session traité sans mention", async () => {
   await handleMessage(makeCtx("oui je suis là"));
   const last = getDebug().at(-1);
   assert.equal(last.decision, "AI");
-  assert.equal(last.reason, "session");
+  assert.ok(["session", "follow-up-session", "session-after-question"].includes(last.reason));
 });
 
 test("reply à Ayumi → traité même hors session", async () => {

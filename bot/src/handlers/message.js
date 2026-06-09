@@ -26,8 +26,11 @@ import {
 import { sendChunked } from "../utils/chunk.js";
 import { recentMessages } from "../db/repo.js";
 import { alreadyProcessed } from "../utils/dedupe.js";
+import { recordMessage } from "../addressing/threads.js";
+import { resolveAddressee } from "../addressing/resolver.js";
+import { moderateSticker } from "../moderation/stickers.js";
 
-const BOT_TRIGGER_RE = /\bayumi\b/i;
+
 
 function debug(entry) {
   if (config.debugConversation) pushDebug(entry);
@@ -57,6 +60,8 @@ async function sendReply(sock, jid, text, msg, botJid) {
   const n = await sendChunked(sock, jid, text, { quoted: msg });
   // Persister la réponse d'Ayumi pour qu'elle apparaisse dans l'historique
   saveBotMessage(botJid, jid, text);
+  // Enregistrer dans le fil pour le resolver
+  recordMessage(jid, { userJid: botJid, text, fromBot: true, mentions: [], quotedJid: null });
   return n;
 }
 
@@ -91,8 +96,28 @@ export async function handleMessage(ctx) {
     text: (text || "").slice(0, 200),
   };
 
-  // --- Médias ---
+  // --- Stickers : pipeline indépendant AVANT addressing ---
   const media = detectMediaType(msg);
+  if (media === "sticker" && config.stickers?.moderation) {
+    try {
+      // Téléchargement non implémenté ici (dépend de Baileys downloadMediaMessage).
+      // On invoque le pipeline avec null si pas de buffer ; classify renvoie skipped.
+      const buf = ctx.stickerBuffer || null;
+      const decision = await moderateSticker(ctx, buf);
+      if (decision.action === "delete") {
+        await tryDelete(sock, groupJid, msg, `sticker:${decision.reason}`);
+        const { total } = warnUser(userJid, `sticker:${decision.reason}`);
+        stats.warnsIssued += 1;
+        await sock.sendMessage(groupJid, {
+          text: `🚫 Sticker bloqué (${decision.reason}). Warn ${total}.`,
+        });
+        debug({ ...baseDbg, decision: "IGNORED", reason: `sticker:${decision.reason}` });
+        return;
+      }
+    } catch (err) {
+      logger.warn({ err: err?.message }, "sticker moderation failed");
+    }
+  }
   if (media && media !== "sticker" && config.moderation.blockMedia) {
     const { total } = warnUser(userJid, `média: ${media}`);
     stats.warnsIssued += 1;
@@ -102,6 +127,17 @@ export async function handleMessage(ctx) {
     });
     debug({ ...baseDbg, decision: "IGNORED", reason: `moderation:media:${media}` });
     return;
+  }
+
+  // Enregistrement du fil conversationnel (avant tout calcul d'adressage)
+  if (text) {
+    recordMessage(groupJid, {
+      userJid,
+      text,
+      mentions: ctx.mentioned || [],
+      quotedJid: ctx.quotedJid,
+      fromBot: false,
+    });
   }
 
   if (!text) {
@@ -203,22 +239,26 @@ export async function handleMessage(ctx) {
     maybeSummarize({ groupJid, recentText: recent });
   }
 
-  // --- Triggers IA ---
-  const isMention = ctx.mentioned?.includes(botJid);
-  const isReplyToBot = ctx.quotedJid === botJid;
-  const looksAddressed = BOT_TRIGGER_RE.test(text);
-  const inSession = hasSession(groupJid, userJid);
-
-  let reason = null;
-  if (isMention) reason = "mention";
-  else if (isReplyToBot) reason = "reply";
-  else if (looksAddressed) reason = "trigger";
-  else if (inSession) reason = "session";
-
-  if (!reason) {
-    debug({ ...baseDbg, decision: "IGNORED", reason: "no-trigger" });
+  // --- Décision d'adressage (Resolver) ---
+  const decision = resolveAddressee({
+    text,
+    userJid,
+    groupJid,
+    botJid,
+    mentioned: ctx.mentioned,
+    quotedJid: ctx.quotedJid,
+    isCommand: false,
+  });
+  if (decision.target !== "ayumi") {
+    debug({
+      ...baseDbg,
+      decision: "IGNORED",
+      reason: `addressing:${decision.target}:${decision.reason}`,
+      confidence: decision.confidence,
+    });
     return;
   }
+  const reason = decision.reason;
 
   // --- Contexte ---
   const { systemExtras, history, sizes } = buildAiContext({
