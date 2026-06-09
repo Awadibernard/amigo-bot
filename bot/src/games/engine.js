@@ -137,6 +137,7 @@ function openRound(state) {
   if (state.timer) clearTimeout(state.timer);
   const ttl = state.mod.social ? SOCIAL_TURN_TIMEOUT_MS : ANSWER_TIMEOUT_MS;
   state.timer = setTimeout(() => endRound(state, null), ttl);
+  if (typeof state.timer?.unref === "function") state.timer.unref();
   if (state.mod.social) {
     return round.prompt;
   }
